@@ -1,0 +1,6 @@
+[submodule "external/plugify"]
+	path = external/plugify
+	url = https://github.com/untrustedmodders/plugify.git
+[submodule "external/sourcesdk"]
+	path = external/sourcesdk
+	url = https://github.com/Wend4r/sourcesdk.git
