@@ -615,7 +615,7 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
         Assembly server(PLUGIFY_LIBRARY_PREFIX "server" PLUGIFY_LIBRARY_SUFFIX, {}, {}, true);
         if (server) {
             auto table = server.GetVirtualTableByName("CLightQueryGameSystem");
-            int offset = GetVTableIndex(&IGameSystem::ServerGamePostSimulate);
+            int offset = GetVirtualTableIndex(&IGameSystem::ServerGamePostSimulate);
             _ServerGamePostSimulate = HookMethod(&table, &ServerGamePostSimulate, offset);
         } else {
             return;
@@ -671,7 +671,7 @@ int main(int argc, char *argv[])
     }
 
     auto table = engine.GetVirtualTableByName("CMaterialSystem2AppSystemDict");
-    int offset = GetVTableIndex(&CAppSystemDict::OnAppSystemLoaded);
+    int offset = GetVirtualTableIndex(&CAppSystemDict::OnAppSystemLoaded);
     _OnAppSystemLoaded = HookMethod(&table, &OnAppSystemLoaded, offset);
 
     auto Source2Main = engine.GetFunctionByName("Source2Main").RCast<Source2MainFn>();

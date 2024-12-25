@@ -48,9 +48,9 @@ add_subdirectory(external/sourcesdk)
 #
 # CPP Language Module for Plugify
 #
-file(GLOB_RECURSE S2PLUGIFY_SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "src/*.cpp")
+file(GLOB_RECURSE PLUGIFY_SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "src/*.cpp")
 
-add_executable(${PROJECT_NAME} ${S2PLUGIFY_SOURCES})
+add_executable(${PROJECT_NAME} ${PLUGIFY_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE external/sourcesdk/public)
 
 set(PLUGIFY_LINK_LIBRARIES plugify::plugify plugify::plugify-assembly sourcesdk::sourcesdk)
