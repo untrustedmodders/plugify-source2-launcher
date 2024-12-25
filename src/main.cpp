@@ -3,8 +3,8 @@
 #include <unordered_set>
 
 #include <plugify/assembly.hpp>
-#include <plugify/mem_protector.hpp>
 #include <plugify/compat_format.hpp>
+#include <plugify/mem_hook.hpp>
 #include <plugify/plugify.hpp>
 #include <plugify/plugin.hpp>
 #include <plugify/module.hpp>
@@ -191,123 +191,6 @@ namespace {
         }
 
         return ptrdiff_t(-1);
-    }
-}
-
-namespace {
-    template<typename F> requires(std::is_pointer_v<F> && std::is_function_v<std::remove_pointer_t<F>>)
-    F HookMethod(void* lpVirtualTable, F pHookMethod, ptrdiff_t dwOffset) {
-        uintptr_t dwVTable = *((uintptr_t*)lpVirtualTable);
-        uintptr_t dwEntry = dwVTable + (dwOffset * sizeof(void*));
-        uintptr_t dwOrig = *((uintptr_t*)dwEntry);
-        MemProtector memProtector(dwEntry, sizeof(dwEntry), ProtFlag::RWX);
-        *((uintptr_t*)dwEntry) = (uintptr_t)pHookMethod;
-        return (F)dwOrig;
-    }
-
-    template<typename F>
-    int GetVTableIndex(F lpVirtualFunc, ProtFlag flag = ProtFlag::RWX) {
-        void* pFunc = (void*&) lpVirtualFunc;
-
-        constexpr size_t size = 12;
-
-        MemProtector protector(pFunc, size, flag);
-
-#if PLUGIFY_COMPILER_GCC || PLUGIFY_COMPILER_CLANG
-        struct GCC_MemFunPtr {
-            union {
-                void* adrr;			// always even
-                intptr_t vti_plus1; // vindex+1, always odd
-            };
-            intptr_t delta;
-        };
-
-        int vtindex;
-        auto mfp_detail = (GCC_MemFunPtr*)&pFunc;
-        if (mfp_detail->vti_plus1 & 1) {
-            vtindex = (mfp_detail->vti_plus1 - 1) / sizeof(void*);
-        } else {
-            vtindex = -1;
-        }
-
-        return vtindex;
-#elif PLUGIFY_COMPILER_MSVC
-        // https://www.unknowncheats.me/forum/c-and-c-/102577-vtable-index-pure-virtual-function.html
-
-        // Check whether it's a virtual function call on x86
-
-        // They look like this:a
-        //		0:  8b 01                   mov    eax,DWORD PTR [ecx]
-        //		2:  ff 60 04                jmp    DWORD PTR [eax+0x4]
-        // ==OR==
-        //		0:  8b 01                   mov    eax,DWORD PTR [ecx]
-        //		2:  ff a0 18 03 00 00       jmp    DWORD PTR [eax+0x318]]
-
-        // However, for vararg functions, they look like this:
-        //		0:  8b 44 24 04             mov    eax,DWORD PTR [esp+0x4]
-        //		4:  8b 00                   mov    eax,DWORD PTR [eax]
-        //		6:  ff 60 08                jmp    DWORD PTR [eax+0x8]
-        // ==OR==
-        //		0:  8b 44 24 04             mov    eax,DWORD PTR [esp+0x4]
-        //		4:  8b 00                   mov    eax,DWORD PTR [eax]
-        //		6:  ff a0 18 03 00 00       jmp    DWORD PTR [eax+0x318]
-        // With varargs, the this pointer is passed as if it was the first argument
-
-        // On x64
-        //		0:  48 8b 01                mov    rax,QWORD PTR [rcx]
-        //		3:  ff 60 04                jmp    QWORD PTR [rax+0x4]
-        // ==OR==
-        //		0:  48 8b 01                mov    rax,QWORD PTR [rcx]
-        //		3:  ff a0 18 03 00 00       jmp    QWORD PTR [rax+0x318]
-        auto finder = [&](uint8_t* addr) {
-            std::unique_ptr<MemProtector> protector;
-
-            if (*addr == 0xE9) {
-                // May or may not be!
-                // Check where it'd jump
-                addr += 5 /*size of the instruction*/ + *(uint32_t*)(addr + 1);
-
-                protector = std::make_unique<MemProtector>(addr, size, flag);
-            }
-
-            bool ok = false;
-#if PLUGIFY_ARCH_BITS == 64
-            if (addr[0] == 0x48 && addr[1] == 0x8B && addr[2] == 0x01) {
-                addr += 3;
-                ok = true;
-            } else
-#endif
-            if (addr[0] == 0x8B && addr[1] == 0x01) {
-                addr += 2;
-                ok = true;
-            } else if (addr[0] == 0x8B && addr[1] == 0x44 && addr[2] == 0x24 && addr[3] == 0x04 && addr[4] == 0x8B && addr[5] == 0x00) {
-                addr += 6;
-                ok = true;
-            }
-
-            if (!ok)
-                return -1;
-
-            constexpr int PtrSize = static_cast<int>(sizeof(void*));
-
-            if (*addr++ == 0xFF) {
-                if (*addr == 0x60)
-                    return *++addr / PtrSize;
-                else if (*addr == 0xA0)
-                    return int(*((uint32_t*)++addr)) / PtrSize;
-                else if (*addr == 0x20)
-                    return 0;
-                else
-                    return -1;
-            }
-
-            return -1;
-        };
-
-        return finder((uint8_t*)pFunc);
-#else
-#error "Compiler not support"
-#endif
     }
 }
 
@@ -674,7 +557,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 static ConCommand plg_command("plg", plugify_callback, "Plugify control options", 0);
 
 using ServerGamePostSimulateFn = void (*)(IGameSystem*, const EventServerGamePostSimulate_t&);
-using OnAppSystemLoadedFn = void (*)(IAppSystem*);
+using OnAppSystemLoadedFn = void (*)(CAppSystemDict*);
 using Source2MainFn = int (*)(void* hInstance, void* hPrevInstance, const char *pszCmdLine, int nShowCmd, const char *pszBaseDir, const char *pszGame);
 
 ServerGamePostSimulateFn _ServerGamePostSimulate;
@@ -712,7 +595,7 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 }
 
 OnAppSystemLoadedFn _OnAppSystemLoaded;
-void OnAppSystemLoaded(IAppSystem* pThis) {
+void OnAppSystemLoaded(CAppSystemDict* pThis) {
     _OnAppSystemLoaded(pThis);
 
     if (s_context)
