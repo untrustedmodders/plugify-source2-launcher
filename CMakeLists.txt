@@ -93,6 +93,6 @@ else()
 endif()
 
 configure_file(
-	${CMAKE_SOURCE_DIR}/plugify.pconfig.in
-	${CMAKE_BINARY_DIR}/plugify.pconfig
+    ${CMAKE_SOURCE_DIR}/plugify.pconfig.in
+    ${CMAKE_BINARY_DIR}/plugify.pconfig
 )
