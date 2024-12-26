@@ -67,7 +67,7 @@ jobs:
       - name: Clean build directory
         run: |
           mkdir -p build/bin/win64/
-          mv build/${{env.BUILD_TYPE}}/external/plugify.dll build/bin/win64/
+          mv build/${{env.BUILD_TYPE}}/external/plugify/plugify.dll build/bin/win64/
           mv build/${{env.BUILD_TYPE}}/s2-plugify.exe build/bin/win64/
           mkdir -p build/output/csgo
           cp -r build/bin build/output
@@ -110,7 +110,7 @@ jobs:
       - name: Clean build directory
         run: |
           mkdir -p build/bin/linuxsteamrt64/
-          mv build/external/libplugify.so build/bin/linuxsteamrt64/
+          mv build/external/plugify/libplugify.so build/bin/linuxsteamrt64/
           mv build/s2-plugify build/bin/linuxsteamrt64/
           mkdir -p build/output/csgo
           mv build/bin build/output
