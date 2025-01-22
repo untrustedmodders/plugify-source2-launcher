@@ -23,7 +23,9 @@
 #include <appframework/iappsystem.h>
 
 #if PLUGIFY_PLATFORM_WINDOWS
+
 #include <windows.h>
+
 #else
 std::string GenerateCmdLine(int argc, char* argv[]) {
     std::string cmdLine;
@@ -38,12 +40,14 @@ using namespace plugify;
 
 class S2Logger final : public ILogger {
 public:
-    explicit S2Logger(const char *name, int flags = 0, LoggingVerbosity_t verbosity = LV_DEFAULT, Color color = UNSPECIFIED_LOGGING_COLOR) {
+    explicit S2Logger(const char *name, int flags = 0, LoggingVerbosity_t verbosity = LV_DEFAULT,
+                      Color color = UNSPECIFIED_LOGGING_COLOR) {
         m_channelID = LoggingSystem_RegisterLoggingChannel(name, nullptr, flags, verbosity, color);
     }
+
     ~S2Logger() override = default;
 
-    void Log(const char* message, LoggingSeverity_t severity, Color color = UNSPECIFIED_LOGGING_COLOR) const {
+    void Log(const char *message, LoggingSeverity_t severity, Color color = UNSPECIFIED_LOGGING_COLOR) const {
         LoggingSystem_Log(m_channelID, severity, color, message);
     }
 
@@ -52,6 +56,9 @@ public:
             std::string sMessage = std::format("{}\n", message);
 
             switch (severity) {
+                case Severity::None:
+                    LoggingSystem_Log(m_channelID, LS_MESSAGE, Color(255, 255, 255, 255), sMessage.c_str());
+                    break;
                 case Severity::Fatal:
                     LoggingSystem_Log(m_channelID, LS_ERROR, Color(255, 0, 255, 255), sMessage.c_str());
                     break;
@@ -70,7 +77,7 @@ public:
                 case Severity::Verbose:
                     LoggingSystem_Log(m_channelID, LS_MESSAGE, Color(255, 255, 255, 255), sMessage.c_str());
                     break;
-                case Severity::None:
+                default:
                     break;
             }
         }
@@ -81,7 +88,7 @@ public:
     }
 
 private:
-    Severity m_severity{ Severity::None };
+    Severity m_severity{Severity::None};
     LoggingChannelID_t m_channelID;
 };
 
@@ -99,65 +106,68 @@ PlugifyState s_state;
 #define CONPRINTE(x) s_logger->Log(x, LS_WARNING, Color(255, 0, 0, 255))
 
 namespace {
-    template<typename S, typename T, typename F> requires(std::is_function_v<F>)
-    void Print(std::string& out, const T& t, F& f, std::string_view tab = "  ") {
+    template<typename S, typename T, typename F>
+    requires(std::is_function_v<F>)
+    void Print(std::string &out, const T &t, F &f, std::string_view tab = "  ") {
         out += tab;
         if (t.GetState() != S::Loaded) {
-            std::format_to(std::back_inserter(out), "[{:02d}] <{}> {}", t.GetId(), f(t.GetState()), t.GetFriendlyName());
+            std::format_to(std::back_inserter(out), "[{:02d}] <{}> {}", t.GetId(), f(t.GetState()),
+                           t.GetFriendlyName());
         } else {
             std::format_to(std::back_inserter(out), "[{:02d}] {}", t.GetId(), t.GetFriendlyName());
         }
         auto descriptor = t.GetDescriptor();
-        const auto& versionName = descriptor.GetVersionName();
+        const auto &versionName = descriptor.GetVersionName();
         if (!versionName.empty()) {
             std::format_to(std::back_inserter(out), " ({})", versionName);
         } else {
             std::format_to(std::back_inserter(out), " (v{})", descriptor.GetVersion());
         }
-        const auto& createdBy = descriptor.GetCreatedBy();
+        const auto &createdBy = descriptor.GetCreatedBy();
         if (!createdBy.empty()) {
             std::format_to(std::back_inserter(out), " by {}", createdBy);
         }
         out += '\n';
     }
 
-    template<typename S, typename T, typename F> requires(std::is_function_v<F>)
-    void Print(std::string& out, const char* name, const T& t, F& f) {
+    template<typename S, typename T, typename F>
+    requires(std::is_function_v<F>)
+    void Print(std::string &out, const char *name, const T &t, F &f) {
         if (t.GetState() == S::Error) {
             std::format_to(std::back_inserter(out), "{} has error: {}.\n", name, t.GetError());
         } else {
             std::format_to(std::back_inserter(out), "{} {} is {}.\n", name, t.GetId(), f(t.GetState()));
         }
         auto descriptor = t.GetDescriptor();
-        const auto& getCreatedBy = descriptor.GetCreatedBy();
+        const auto &getCreatedBy = descriptor.GetCreatedBy();
         if (!getCreatedBy.empty()) {
             std::format_to(std::back_inserter(out), "  Name: \"{}\" by {}\n", t.GetFriendlyName(), getCreatedBy);
         } else {
             std::format_to(std::back_inserter(out), "  Name: \"{}\"\n", t.GetFriendlyName());
         }
-        const auto& versionName = descriptor.GetVersionName();
+        const auto &versionName = descriptor.GetVersionName();
         if (!versionName.empty()) {
             std::format_to(std::back_inserter(out), "  Version: {}\n", versionName);
         } else {
             std::format_to(std::back_inserter(out), "  Version: {}\n", descriptor.GetVersion());
         }
-        const auto& description = descriptor.GetDescription();
+        const auto &description = descriptor.GetDescription();
         if (!description.empty()) {
             std::format_to(std::back_inserter(out), "  Description: {}\n", description);
         }
-        const auto& createdByURL = descriptor.GetCreatedByURL();
+        const auto &createdByURL = descriptor.GetCreatedByURL();
         if (!createdByURL.empty()) {
             std::format_to(std::back_inserter(out), "  URL: {}\n", createdByURL);
         }
-        const auto& docsURL = descriptor.GetDocsURL();
+        const auto &docsURL = descriptor.GetDocsURL();
         if (!docsURL.empty()) {
             std::format_to(std::back_inserter(out), "  Docs: {}\n", docsURL);
         }
-        const auto& downloadURL = descriptor.GetDownloadURL();
+        const auto &downloadURL = descriptor.GetDownloadURL();
         if (!downloadURL.empty()) {
             std::format_to(std::back_inserter(out), "  Download: {}\n", downloadURL);
         }
-        const auto& updateURL = descriptor.GetUpdateURL();
+        const auto &updateURL = descriptor.GetUpdateURL();
         if (!updateURL.empty()) {
             std::format_to(std::back_inserter(out), "  Update: {}\n", updateURL);
         }
@@ -171,7 +181,7 @@ namespace {
         return ss.str();
     }
 
-    ptrdiff_t FormatInt(const std::string& str) {
+    ptrdiff_t FormatInt(const std::string &str) {
         try {
             size_t pos;
             ptrdiff_t result = std::stoul(str, &pos);
@@ -180,13 +190,13 @@ namespace {
             }
             return result;
         }
-        catch (const std::invalid_argument& e) {
+        catch (const std::invalid_argument &e) {
             CONPRINTE(std::format("Invalid argument: {}\n", e.what()).c_str());
         }
-        catch (const std::out_of_range& e) {
+        catch (const std::out_of_range &e) {
             CONPRINTE(std::format("Out of range: {}\n", e.what()).c_str());
         }
-        catch (const std::exception& e) {
+        catch (const std::exception &e) {
             CONPRINTE(std::format("Conversion error: {}\n", e.what()).c_str());
         }
 
@@ -210,12 +220,12 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
     auto& plugify = s_context;
     if (!plugify)
-        return; // Should not trigger!
+        return;// Should not trigger!
 
     auto packageManager = plugify->GetPackageManager().lock();
     auto pluginManager = plugify->GetPluginManager().lock();
     if (!packageManager || !pluginManager)
-        return; // Should not trigger!
+        return;// Should not trigger!
 
     if (arguments.size() > 1) {
         if (arguments[1] == "help" || arguments[1] == "-h") {
@@ -253,14 +263,19 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
                      "  -m, --missing  - Install missing packages\n"
                      "  -c, --conflict - Remove conflict packages\n"
                      "  -i, --ignore   - Ignore missing or conflict packages\n");
-        } else if (arguments[1] == "version" || arguments[1] == "-v") {
+        }
+
+        else if (arguments[1] == "version" || arguments[1] == "-v") {
             CONPRINT(R"(      ____)" "\n"
                      R"( ____|    \         Plugify v)" PLUGIFY_PROJECT_VERSION "\n"
                      R"((____|     `._____  )" "Copyright (C) 2023-" PLUGIFY_PROJECT_YEAR " Untrusted Modders Team\n"
                      R"( ____|       _|___)" "\n"
                      R"((____|     .'       This program may be freely redistributed under)" "\n"
                      R"(     |____/         the terms of the GNU General Public License.)" "\n");
-        } else if (arguments[1] == "load") {
+        }
+
+        else if (arguments[1] == "load") {
+            packageManager->Reload();
             if (!options.contains("--ignore") && !options.contains("-i")) {
                 if (packageManager->HasMissedPackages()) {
                     CONPRINTE("Plugin manager has missing packages, run 'install --missing' to resolve issues.\n");
@@ -276,89 +291,91 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
             } else {
                 s_state = PlugifyState::Load;
             }
-        } else if (arguments[1] == "unload") {
+        }
+
+        else if (arguments[1] == "unload") {
             if (!pluginManager->IsInitialized()) {
                 CONPRINTE("Plugin manager already unloaded.\n");
             } else {
                 s_state = PlugifyState::Unload;
             }
-        } else if (arguments[1] == "plugins") {
+        }
+
+        else if (arguments[1] == "plugins") {
             if (!pluginManager->IsInitialized()) {
                 CONPRINTE("You must load plugin manager before query any information from it.\n");
                 return;
             }
 
             auto count = pluginManager->GetPlugins().size();
-            std::string sMessage = count ? std::format("Listing {} plugin{}:\n", static_cast<int>(count),
-                                                       (count > 1) ? "s" : "") : std::string("No plugins loaded.\n");
+            std::string sMessage = count ? std::format("Listing {} plugin{}:\n", count, (count > 1) ? "s" : "") : std::string("No plugins loaded.\n");
 
-            for (auto& plugin: pluginManager->GetPlugins()) {
-                Print<PluginState>(sMessage, plugin, PluginUtils::ToString);
+            for (const auto& plugin: pluginManager->GetPlugins()) {
+                Print<plugify::PluginState>(sMessage, plugin, plugify::PluginUtils::ToString);
             }
 
             CONPRINT(sMessage.c_str());
-        } else if (arguments[1] == "modules") {
+        }
+
+        else if (arguments[1] == "modules") {
             if (!pluginManager->IsInitialized()) {
                 CONPRINTE("You must load plugin manager before query any information from it.\n");
                 return;
             }
             auto count = pluginManager->GetModules().size();
-            std::string sMessage = count ? std::format("Listing {} module{}:\n", static_cast<int>(count),
-                                                       (count > 1) ? "s" : "") : std::string("No modules loaded.\n");
-            for (auto& module: pluginManager->GetModules()) {
-                Print<ModuleState>(sMessage, module, ModuleUtils::ToString);
+            std::string sMessage = count ? std::format("Listing {} module{}:\n", count, (count > 1) ? "s" : "") : std::string("No modules loaded.\n");
+            for (const auto& module: pluginManager->GetModules()) {
+                Print<plugify::ModuleState>(sMessage, module, plugify::ModuleUtils::ToString);
             }
 
             CONPRINT(sMessage.c_str());
-        } else if (arguments[1] == "plugin") {
+        }
+
+        else if (arguments[1] == "plugin") {
             if (arguments.size() > 2) {
                 if (!pluginManager->IsInitialized()) {
                     CONPRINTE("You must load plugin manager before query any information from it.\n");
                     return;
                 }
-                auto plugin = options.contains("--uuid") || options.contains("-u") ?
-                        pluginManager->FindPluginFromId(FormatInt(arguments[2])) : pluginManager->FindPlugin(arguments[2]);
+                auto plugin = options.contains("--uuid") || options.contains("-u") ? pluginManager->FindPluginFromId(FormatInt(arguments[2])) : pluginManager->FindPlugin(arguments[2]);
                 if (plugin.has_value()) {
                     std::string sMessage;
-                    Print<PluginState>(sMessage, "Plugin", *plugin, PluginUtils::ToString);
+                    Print<plugify::PluginState>(sMessage, "Plugin", *plugin, plugify::PluginUtils::ToString);
                     auto descriptor = plugin->GetDescriptor();
-                    std::format_to(std::back_inserter(sMessage), "  Language module: {}\n",
-                                   descriptor.GetLanguageModule());
+                    std::format_to(std::back_inserter(sMessage), "  Language module: {}\n", descriptor.GetLanguageModule());
                     sMessage += "  Dependencies: \n";
                     for (const auto& reference: descriptor.GetDependencies()) {
                         auto dependency = pluginManager->FindPlugin(reference.GetName());
                         if (dependency.has_value()) {
-                            Print<PluginState>(sMessage, *dependency, PluginUtils::ToString, "    ");
+                            Print<plugify::PluginState>(sMessage, *dependency, plugify::PluginUtils::ToString, "    ");
                         } else {
-                            std::format_to(std::back_inserter(sMessage), "    {} <Missing> (v{})", reference.GetName(),
-                                           reference.GetRequestedVersion().has_value() ? std::to_string(
-                                                   *reference.GetRequestedVersion()) : "[latest]");
+                            std::format_to(std::back_inserter(sMessage), "    {} <Missing> (v{})", reference.GetName(), reference.GetRequestedVersion().has_value() ? std::to_string(*reference.GetRequestedVersion()) : "[latest]");
                         }
                     }
                     std::format_to(std::back_inserter(sMessage), "  File: {}\n\n", descriptor.GetEntryPoint());
 
                     CONPRINT(sMessage.c_str());
                 } else {
-                    CONPRINT(std::format("Plugin {} not found.\n", arguments[2]).c_str());
+                    CONPRINTE(std::format("Plugin {} not found.\n", arguments[2]).c_str());
                 }
             } else {
                 CONPRINTE("You must provide name.\n");
             }
-        } else if (arguments[1] == "module") {
+        }
+
+        else if (arguments[1] == "module") {
             if (arguments.size() > 2) {
                 if (!pluginManager->IsInitialized()) {
                     CONPRINTE("You must load plugin manager before query any information from it.");
                     return;
                 }
-                auto module = options.contains("--uuid") || options.contains("-u") ?
-                        pluginManager->FindModuleFromId(FormatInt(arguments[2])) : pluginManager->FindModule(arguments[2]);
+                auto module = options.contains("--uuid") || options.contains("-u") ? pluginManager->FindModuleFromId(FormatInt(arguments[2])) : pluginManager->FindModule(arguments[2]);
                 if (module.has_value()) {
                     std::string sMessage;
 
-                    Print<ModuleState>(sMessage, "Module", *module, ModuleUtils::ToString);
+                    Print<plugify::ModuleState>(sMessage, "Module", *module, plugify::ModuleUtils::ToString);
                     std::format_to(std::back_inserter(sMessage), "  Language: {}\n", module->GetLanguage());
-                    std::format_to(std::back_inserter(sMessage), "  File: {}\n\n",
-                                   std::filesystem::path(module->GetFilePath()).string());
+                    std::format_to(std::back_inserter(sMessage), "  File: {}\n\n", std::filesystem::path(module->GetFilePath()).string());
 
                     CONPRINT(sMessage.c_str());
                 } else {
@@ -367,16 +384,17 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
             } else {
                 CONPRINTE("You must provide name.\n");
             }
-        } else if (arguments[1] == "snapshot") {
+        }
+
+        else if (arguments[1] == "snapshot") {
             if (pluginManager->IsInitialized()) {
                 CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
                 return;
             }
-            packageManager->SnapshotPackages(plugify->GetConfig().baseDir / std::format("snapshot_{}.wpackagemanifest",
-                                                                                        FormatTime(
-                                                                                                "%Y_%m_%d_%H_%M_%S")),
-                                             true);
-        } else if (arguments[1] == "repo") {
+            packageManager->SnapshotPackages(plugify->GetConfig().baseDir / std::format("snapshot_{}.wpackagemanifest", FormatTime("%Y_%m_%d_%H_%M_%S")), true);
+        }
+
+        else if (arguments[1] == "repo") {
             if (pluginManager->IsInitialized()) {
                 CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
                 return;
@@ -393,7 +411,9 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
             } else {
                 CONPRINTE("You must give at least one repository to add.\n");
             }
-        } else if (arguments[1] == "install") {
+        }
+
+        else if (arguments[1] == "install") {
             if (pluginManager->IsInitialized()) {
                 CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
                 return;
@@ -417,7 +437,9 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
                     CONPRINTE("You must give at least one requirement to install.\n");
                 }
             }
-        } else if (arguments[1] == "remove") {
+        }
+
+        else if (arguments[1] == "remove") {
             if (pluginManager->IsInitialized()) {
                 CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
                 return;
@@ -437,7 +459,9 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
                     CONPRINTE("You must give at least one requirement to remove.\n");
                 }
             }
-        } else if (arguments[1] == "update") {
+        }
+
+        else if (arguments[1] == "update") {
             if (pluginManager->IsInitialized()) {
                 CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
                 return;
@@ -451,68 +475,74 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
                     CONPRINTE("You must give at least one requirement to update.\n");
                 }
             }
-        } else if (arguments[1] == "list") {
+        }
+
+        else if (arguments[1] == "list") {
             if (pluginManager->IsInitialized()) {
                 CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
                 return;
             }
-            auto count = packageManager->GetLocalPackages().size();
+            auto localPackages = packageManager->GetLocalPackages();
+            auto count = localPackages.size();
             if (!count) {
                 CONPRINTE("No local packages found.\n");
             } else {
-                CONPRINT(std::format("Listing {} local package{}:\n", static_cast<int>(count),
-                                     (count > 1) ? "s" : "").c_str());
+                CONPRINT(std::format("Listing {} local package{}:\n", count, (count > 1) ? "s" : "").c_str());
             }
-            for (auto& localPackage: packageManager->GetLocalPackages()) {
-                CONPRINT(std::format("  {} [{}] (v{}) at {}\n", localPackage.name, localPackage.type,
-                                     localPackage.version, localPackage.path.string()).c_str());
+            for (const auto& localPackage: localPackages) {
+                CONPRINT(std::format("  {} [{}] (v{}) at {}\n", localPackage->name, localPackage->type, localPackage->version, localPackage->path.string()).c_str());
             }
-        } else if (arguments[1] == "query") {
+        }
+
+        else if (arguments[1] == "query") {
             if (pluginManager->IsInitialized()) {
                 CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
                 return;
             }
+            auto remotePackages = packageManager->GetRemotePackages();
             auto count = packageManager->GetRemotePackages().size();
-            std::string sMessage = count ? std::format("Listing {} remote package{}:\n", static_cast<int>(count),
-                                                       (count > 1) ? "s" : "") : std::string(
-                    "No remote packages found.\n");
-            for (auto& remotePackage: packageManager->GetRemotePackages()) {
-                if (remotePackage.author.empty() || remotePackage.description.empty()) {
-                    std::format_to(std::back_inserter(sMessage), "  {} [{}]\n", remotePackage.name, remotePackage.type);
+            std::string sMessage = count ? std::format("Listing {} remote package{}:\n", count, (count > 1) ? "s" : "") : std::string("No remote packages found.\n");
+            for (const auto& remotePackage: remotePackages) {
+                if (remotePackage->author.empty() || remotePackage->description.empty()) {
+                    std::format_to(std::back_inserter(sMessage), "  {} [{}]\n", remotePackage->name, remotePackage->type);
                 } else {
-                    std::format_to(std::back_inserter(sMessage), "  {} [{}] ({}) by {}\n", remotePackage.name,
-                                   remotePackage.type, remotePackage.description, remotePackage.author);
+                    std::format_to(std::back_inserter(sMessage), "  {} [{}] ({}) by {}\n", remotePackage->name, remotePackage->type, remotePackage->description, remotePackage->author);
                 }
             }
 
             CONPRINT(sMessage.c_str());
-        } else if (arguments[1] == "show") {
+        }
+
+        else if (arguments[1] == "show") {
             if (pluginManager->IsInitialized()) {
                 CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
                 return;
             }
             if (arguments.size() > 2) {
                 auto package = packageManager->FindLocalPackage(arguments[2]);
-                if (package.has_value()) {
+                if (package) {
                     CONPRINT(std::format("  Name: {}\n"
                                          "  Type: {}\n"
                                          "  Version: {}\n"
-                                         "  File: {}\n\n", package->name, package->type, package->version,
-                                         package->path.string()).c_str());
+                                         "  File: {}\n\n",
+                                         package->name, package->type, package->version, package->path.string())
+                                     .c_str());
                 } else {
                     CONPRINTE(std::format("Package {} not found.\n", arguments[2]).c_str());
                 }
             } else {
                 CONPRINTE("You must provide name.\n");
             }
-        } else if (arguments[1] == "search") {
+        }
+
+        else if (arguments[1] == "search") {
             if (pluginManager->IsInitialized()) {
                 CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
                 return;
             }
             if (arguments.size() > 2) {
                 auto package = packageManager->FindRemotePackage(arguments[2]);
-                if (package.has_value()) {
+                if (package) {
                     std::string sMessage;
 
                     std::format_to(std::back_inserter(sMessage), "  Name: {}\n", package->name);
@@ -523,14 +553,15 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
                     if (!package->description.empty()) {
                         std::format_to(std::back_inserter(sMessage), "  Description: {}\n", package->description);
                     }
-                    if (!package->versions.empty()) {
-                        std::string versions("  Versions: ");
-                        std::format_to(std::back_inserter(versions), "{}", package->versions.begin()->version);
-                        for (auto it = std::next(package->versions.begin()); it != package->versions.end(); ++it) {
-                            std::format_to(std::back_inserter(versions), ", {}", it->version);
+                    const auto& versions = package->versions;
+                    if (!versions.empty()) {
+                        std::string combined("  Versions: ");
+                        std::format_to(std::back_inserter(combined), "{}", versions.begin()->version);
+                        for (auto it = std::next(versions.begin()); it != versions.end(); ++it) {
+                            std::format_to(std::back_inserter(combined), ", {}", it->version);
                         }
-                        std::format_to(std::back_inserter(versions), "\n\n");
-                        sMessage += versions;
+                        std::format_to(std::back_inserter(combined), "\n\n");
+                        sMessage += combined;
 
                         CONPRINT(sMessage.c_str());
                     } else {
@@ -542,10 +573,13 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
             } else {
                 CONPRINTE("You must provide name.\n");
             }
-        } else {
+        }
+
+        else {
             std::string sMessage = std::format("unknown option: {}\n", arguments[1]);
             sMessage += "usage: plugify <command> [options] [arguments]\n"
                         "Try plugify help or -h for more information.\n";
+
             CONPRINTE(sMessage.c_str());
         }
     } else {
@@ -556,12 +590,14 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
 static ConCommand plg_command("plg", plugify_callback, "Plugify control options", 0);
 
-using ServerGamePostSimulateFn = void (*)(IGameSystem*, const EventServerGamePostSimulate_t&);
-using OnAppSystemLoadedFn = void (*)(CAppSystemDict*);
-using Source2MainFn = int (*)(void* hInstance, void* hPrevInstance, const char *pszCmdLine, int nShowCmd, const char *pszBaseDir, const char *pszGame);
+using ServerGamePostSimulateFn = void (*)(IGameSystem *, const EventServerGamePostSimulate_t &);
+using OnAppSystemLoadedFn = void (*)(CAppSystemDict *);
+using Source2MainFn = int (*)(void *hInstance, void *hPrevInstance, const char *pszCmdLine, int nShowCmd,
+                              const char *pszBaseDir, const char *pszGame);
 
 ServerGamePostSimulateFn _ServerGamePostSimulate;
-void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulate_t& msg) {
+
+void ServerGamePostSimulate(IGameSystem *pThis, const EventServerGamePostSimulate_t &msg) {
     _ServerGamePostSimulate(pThis, msg);
 
     switch (s_state) {
@@ -585,6 +621,10 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 
             pluginManager->Terminate();
             CONPRINT("Plugin manager was unloaded.\n");
+
+            if (auto packageManager = s_context->GetPackageManager().lock()) {
+                packageManager->Reload();
+            }
             break;
         }
         case PlugifyState::Wait:
@@ -595,7 +635,8 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 }
 
 OnAppSystemLoadedFn _OnAppSystemLoaded;
-void OnAppSystemLoaded(CAppSystemDict* pThis) {
+
+void OnAppSystemLoaded(CAppSystemDict *pThis) {
     _OnAppSystemLoaded(pThis);
 
     if (s_context)
@@ -605,7 +646,7 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
         Assembly tier0(PLUGIFY_LIBRARY_PREFIX "tier0" PLUGIFY_LIBRARY_SUFFIX);
         if (tier0) {
             auto CreateInterface = tier0.GetFunctionByName("CreateInterface").RCast<CreateInterfaceFn>();
-            g_pCVar = reinterpret_cast<ICvar*>(CreateInterface(CVAR_INTERFACE_VERSION, nullptr));
+            g_pCVar = reinterpret_cast<ICvar *>(CreateInterface(CVAR_INTERFACE_VERSION, nullptr));
         } else {
             return;
         }
@@ -655,6 +696,7 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
 }
 
 #if PLUGIFY_PLATFORM_WINDOWS
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine, int nCmdShow)
 #else
 int main(int argc, char *argv[])
@@ -689,7 +731,7 @@ int main(int argc, char *argv[])
         if (p) {
             try {
                 std::rethrow_exception(p);
-            } catch (const std::exception& e) {
+            } catch (const std::exception &e) {
                 std::clog << typeid(e).name() << ": " << e.what() << std::endl;
             } catch (...) {
                 std::clog << "unknown exception" << std::endl;

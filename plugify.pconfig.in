@@ -3,7 +3,6 @@
     "logSeverity": "debug",
     "repositories": [
         "https://untrustedmodders.github.io/plugify-module-cpp/plugify-module-cpp.json",
-        "https://untrustedmodders.github.io/plugify-module-mono/plugify-module-mono.json",
         "https://untrustedmodders.github.io/plugify-module-golang/plugify-module-golang.json",
         "https://untrustedmodders.github.io/plugify-module-dotnet/plugify-module-dotnet.json",
         "https://untrustedmodders.github.io/plugify-module-python3.12/plugify-module-python3.12.json",
