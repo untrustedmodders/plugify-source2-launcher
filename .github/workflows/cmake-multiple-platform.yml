@@ -21,19 +21,24 @@ jobs:
   setup:
     permissions:
       contents: write
+      pull-requests: write
+      repository-projects: write
     runs-on: ubuntu-latest
     outputs:
-      buildnumber: ${{ steps.buildnumber.outputs.build_number }}
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - name: Generate build number
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        id: buildnumber
-        uses: onyxmueller/build-tag-number@v1
+      - name: Generate Release
+        uses: googleapis/release-please-action@v4
+        id: release
         with:
-          token: ${{secrets.github_token}}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: .github/release-please-config.json
+          manifest-file: .github/release-please-manifest.json
 
   build_windows:
     needs: setup
+    if: ${{ needs.setup.outputs.release_created }}
     runs-on: windows-latest
     steps:
       - name: Prepare env
@@ -61,14 +66,14 @@ jobs:
         run: |
           mkdir -p build
           cd build
-          cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DPLUGIFY_PROJECT_VERSION="${{ needs.setup.outputs.buildnumber }}" ..
+          cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DPLUGIFY_PROJECT_VERSION="${{ needs.setup.outputs.tag_name }}" ..
           cmake --build . --target s2-plugify --config ${{ env.BUILD_TYPE }} -- /m
 
       - name: Clean build directory
         run: |
           mkdir -p build/bin/win64/
-          mv build/${{env.BUILD_TYPE}}/external/plugify/plugify.dll build/bin/win64/
-          mv build/${{env.BUILD_TYPE}}/s2-plugify.exe build/bin/win64/
+          mv build/${{ env.BUILD_TYPE }}/external/plugify/plugify.dll build/bin/win64/
+          mv build/${{ env.BUILD_TYPE }}/s2-plugify.exe build/bin/win64/
           mkdir -p build/output/csgo
           cp -r build/bin build/output
           cp build/plugify.pconfig build/output/csgo
@@ -80,6 +85,7 @@ jobs:
 
   build_linux:
     needs: setup
+    if: ${{ needs.setup.outputs.release_created }}
     runs-on: ubuntu-latest
     container:
       image: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
@@ -104,7 +110,7 @@ jobs:
         run: |
           mkdir -p build
           cd build
-          cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DPLUGIFY_PROJECT_VERSION="${{ needs.setup.outputs.buildnumber }}" ..
+          cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DPLUGIFY_PROJECT_VERSION="${{ needs.setup.outputs.tag_name }}" ..
           cmake --build . --target s2-plugify --config ${{ env.BUILD_TYPE }} -- -j
 
       - name: Clean build directory
@@ -122,10 +128,10 @@ jobs:
           path: build/output/
 
   publish:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     permissions:
       contents: write
     needs: ["setup", "build_linux", "build_windows"]
+    if: ${{ needs.setup.outputs.release_created }}
     runs-on: ubuntu-latest
     steps:
       - name: Prepare env
@@ -133,7 +139,7 @@ jobs:
         run: echo "GITHUB_SHA_SHORT=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
       - name: Main build number
-        run: echo "BUILD_NUMBER=${{ needs.setup.outputs.buildnumber }}" >> $GITHUB_ENV
+        run: echo "BUILD_NUMBER=${{ needs.setup.outputs.tag_name }}" >> $GITHUB_ENV
 
       - uses: actions/download-artifact@v4
         with:
@@ -154,7 +160,7 @@ jobs:
         id: release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ env.BUILD_NUMBER }}
+          tag_name: ${{ env.BUILD_NUMBER }}
           files: |
             plugify-build-${{ env.BUILD_NUMBER }}-windows-${{ env.GITHUB_SHA_SHORT }}.zip
             plugify-build-${{ env.BUILD_NUMBER }}-linux-${{ env.GITHUB_SHA_SHORT }}.zip
@@ -164,4 +170,4 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         uses: Ilshidur/action-discord@0.3.2
         with:
-          args: "A new release of s2-plugify has been tagged (v${{ env.BUILD_NUMBER }}) at ${{ steps.release.outputs.url }}"
+          args: "# A new release of S2-Plugify has been tagged [${{ needs.setup.outputs.tag_name }}](${{ needs.publish.outputs.url }})"
