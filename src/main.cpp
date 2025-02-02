@@ -603,6 +603,8 @@ ServerGamePostSimulateFn _ServerGamePostSimulate;
 void ServerGamePostSimulate(IGameSystem *pThis, const EventServerGamePostSimulate_t &msg) {
     _ServerGamePostSimulate(pThis, msg);
 
+    s_context->Update();
+
     switch (s_state) {
         case PlugifyState::Load: {
             auto pluginManager = s_context->GetPluginManager().lock();
