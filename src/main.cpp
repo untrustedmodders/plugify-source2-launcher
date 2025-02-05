@@ -40,8 +40,7 @@ using namespace plugify;
 
 class S2Logger final : public ILogger {
 public:
-    explicit S2Logger(const char *name, int flags = 0, LoggingVerbosity_t verbosity = LV_DEFAULT,
-                      Color color = UNSPECIFIED_LOGGING_COLOR) {
+    explicit S2Logger(const char *name, int flags = 0, LoggingVerbosity_t verbosity = LV_DEFAULT, Color color = UNSPECIFIED_LOGGING_COLOR) {
         m_channelID = LoggingSystem_RegisterLoggingChannel(name, nullptr, flags, verbosity, color);
     }
 
@@ -122,7 +121,7 @@ namespace {
         if (!versionName.empty()) {
             std::format_to(std::back_inserter(out), " ({})", versionName);
         } else {
-            std::format_to(std::back_inserter(out), " (v{})", descriptor.GetVersion());
+            std::format_to(std::back_inserter(out), " ({})", descriptor.GetVersion());
         }
         const auto &createdBy = descriptor.GetCreatedBy();
         if (!createdBy.empty()) {
@@ -261,7 +260,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
         else if (arguments[1] == "version" || arguments[1] == "-v") {
             CONPRINT(R"(      ____)" "\n"
-                     R"( ____|    \         Plugify v)" PLUGIFY_PROJECT_VERSION "\n"
+                     R"( ____|    \         Plugify )" PLUGIFY_PROJECT_VERSION "\n"
                      R"((____|     `._____  )" "Copyright (C) 2023-" PLUGIFY_PROJECT_YEAR " Untrusted Modders Team\n"
                      R"( ____|       _|___)" "\n"
                      R"((____|     .'       This program may be freely redistributed under)" "\n"
