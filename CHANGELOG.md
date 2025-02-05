@@ -1,0 +1,10 @@
+# Changelog
+
+## [1.0.1](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.0...v1.0.1) (2025-02-05)
+
+
+### Bug Fixes
+
+* add missing update invoke ([4448f46](https://github.com/untrustedmodders/s2-plugify/commit/4448f464f5e0d1f1260b0b0f7d4a8b678c2a4bb8))
+* change repo link ([1352856](https://github.com/untrustedmodders/s2-plugify/commit/1352856e261b119bb194c567be53f174d6b86630))
+* update plugify ([1ab0f22](https://github.com/untrustedmodders/s2-plugify/commit/1ab0f225c005da471e8a7f3071a330b5be25bb81))
