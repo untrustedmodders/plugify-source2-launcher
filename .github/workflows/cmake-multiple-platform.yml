@@ -138,9 +138,6 @@ jobs:
         shell: bash
         run: echo "GITHUB_SHA_SHORT=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-      - name: Main build number
-        run: echo "BUILD_NUMBER=${{ needs.setup.outputs.tag_name }}" >> $GITHUB_ENV
-
       - uses: actions/download-artifact@v4
         with:
           name: plugify-build-windows-${{ env.GITHUB_SHA_SHORT }}
@@ -153,17 +150,17 @@ jobs:
 
       - name: Zip Builds
         run: |
-          (cd build/linux && zip -qq -r ../../plugify-build-${{ env.BUILD_NUMBER }}-linux-${{ env.GITHUB_SHA_SHORT }}.zip *)
-          (cd build/windows && zip -qq -r ../../plugify-build-${{ env.BUILD_NUMBER }}-windows-${{ env.GITHUB_SHA_SHORT }}.zip *)
+          (cd build/linux && zip -qq -r ../../plugify-build-${{ needs.setup.outputs.tag_name }}-linux-${{ env.GITHUB_SHA_SHORT }}.zip *)
+          (cd build/windows && zip -qq -r ../../plugify-build-${{ needs.setup.outputs.tag_name }}-windows-${{ env.GITHUB_SHA_SHORT }}.zip *)
 
       - name: Release
         id: release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ env.BUILD_NUMBER }}
+          tag_name: ${{ needs.setup.outputs.tag_name }}
           files: |
-            plugify-build-${{ env.BUILD_NUMBER }}-windows-${{ env.GITHUB_SHA_SHORT }}.zip
-            plugify-build-${{ env.BUILD_NUMBER }}-linux-${{ env.GITHUB_SHA_SHORT }}.zip
+            plugify-build-${{ needs.setup.outputs.tag_name }}-windows-${{ env.GITHUB_SHA_SHORT }}.zip
+            plugify-build-${{ needs.setup.outputs.tag_name }}-linux-${{ env.GITHUB_SHA_SHORT }}.zip
 
       - name: Send Notification to Discord
         env:
