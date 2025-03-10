@@ -167,4 +167,4 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         uses: Ilshidur/action-discord@0.3.2
         with:
-          args: "# A new release of S2-Plugify has been tagged [${{ needs.setup.outputs.tag_name }}](${{ needs.publish.outputs.url }})"
+          args: "# A new release of S2-Plugify has been tagged [${{ needs.setup.outputs.tag_name }}](${{ steps.release.outputs.url }})"
