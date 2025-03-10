@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.4](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.3...v1.0.4) (2025-03-10)
+
+
+### Bug Fixes
+
+* change discord message ([f18195c](https://github.com/untrustedmodders/s2-plugify/commit/f18195c0454021db70d71f5cc1a59b9fd90620b9))
+* update plugify & sdk ([187d122](https://github.com/untrustedmodders/s2-plugify/commit/187d122a5e6fd953c1c9736c9e4c731a13faf39c))
+* update plugify and sdk ([0840c51](https://github.com/untrustedmodders/s2-plugify/commit/0840c511852895daa7d989477a9c263a1bb48e2d))
+
 ## [1.0.3](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.2...v1.0.3) (2025-02-05)
 
 
