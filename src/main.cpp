@@ -22,11 +22,6 @@
 #include <tier0/logging.h>
 #include <appframework/iappsystem.h>
 
-#if PLUGIFY_PLATFORM_WINDOWS
-
-#include <windows.h>
-
-#else
 std::string GenerateCmdLine(int argc, char* argv[]) {
     std::string cmdLine;
     for (int i = 1; i < argc; ++i) {
@@ -34,7 +29,6 @@ std::string GenerateCmdLine(int argc, char* argv[]) {
     }
     return cmdLine;
 }
-#endif // PLUGIFY_PLATFORM_WINDOWS
 
 using namespace plugify;
 
@@ -716,13 +710,7 @@ void OnAppSystemLoaded(CAppSystemDict *pThis) {
     }
 }
 
-#if PLUGIFY_PLATFORM_WINDOWS
-
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine, int nCmdShow)
-#else
-int main(int argc, char *argv[])
-#endif
-{
+int main(int argc, char *argv[]) {
     auto exec_path = std::filesystem::current_path();
     auto engine_path = exec_path / PLUGIFY_LIBRARY_PREFIX "engine2" PLUGIFY_LIBRARY_SUFFIX;
     auto parent_path = exec_path.generic_string();
@@ -739,28 +727,8 @@ int main(int argc, char *argv[])
 
     auto Source2Main = engine.GetFunctionByName("Source2Main").RCast<Source2MainFn>();
 
-    int res = 0;
-    try {
-#if PLUGIFY_PLATFORM_WINDOWS
-        res = Source2Main(hInstance, hPrevInstance, lpCmdLine, nCmdShow, parent_path.c_str(), PLUGIFY_GAME_NAME);
-#else
-        auto lpCmdLine = GenerateCmdLine(argc, argv);
-        res = Source2Main(reinterpret_cast<void*>(1), reinterpret_cast<void*>(0), lpCmdLine.c_str(), 0, parent_path.c_str(), PLUGIFY_GAME_NAME);
-#endif
-    } catch (...) {
-        std::exception_ptr p = std::current_exception();
-        if (p) {
-            try {
-                std::rethrow_exception(p);
-            } catch (const std::exception &e) {
-                std::clog << typeid(e).name() << ": " << e.what() << std::endl;
-            } catch (...) {
-                std::clog << "unknown exception" << std::endl;
-            }
-        } else {
-            std::clog << "null" << std::endl;
-        }
-    }
+    auto command_line = GenerateCmdLine(argc, argv);
+    int res = Source2Main(nullptr, nullptr, command_line.c_str(), 0, parent_path.c_str(), PLUGIFY_GAME_NAME);
 
     s_context.reset();
     s_logger.reset();
