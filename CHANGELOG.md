@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.7](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.6...v1.0.7) (2025-03-17)
+
+
+### Bug Fixes
+
+* update action build ([c59314c](https://github.com/untrustedmodders/s2-plugify/commit/c59314c0084576cd8bd39504f22714d74433f058))
+
 ## [1.0.6](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.5...v1.0.6) (2025-03-17)
 
 
