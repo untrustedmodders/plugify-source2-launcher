@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.6](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.5...v1.0.6) (2025-03-17)
+
+
+### Bug Fixes
+
+* refactor main ([0eea3ce](https://github.com/untrustedmodders/s2-plugify/commit/0eea3ce0f14c2854883eac76efedd95472a087ec))
+* update plugify ([a62404a](https://github.com/untrustedmodders/s2-plugify/commit/a62404a1aeb894f85049715c23f93d4f77a987e7))
+
 ## [1.0.5](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.4...v1.0.5) (2025-03-10)
 
 
