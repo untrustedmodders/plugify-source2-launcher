@@ -70,13 +70,14 @@ jobs:
           cmake --build . --target s2-plugify --config ${{ env.BUILD_TYPE }} -- /m
 
       - name: Clean build directory
+        shell: pwsh
         run: |
-          mkdir -p build/bin/win64/
-          mv build/${{ env.BUILD_TYPE }}/external/plugify/plugify.dll build/bin/win64/
-          mv build/${{ env.BUILD_TYPE }}/s2-plugify.exe build/bin/win64/
-          mkdir -p build/output/csgo
-          cp -r build/bin build/output
-          cp build/plugify.pconfig build/output/csgo
+          New-Item -ItemType Directory -Force -Path build/bin/win64/
+          Move-Item -Force -Path build/external/plugify/${{ env.BUILD_TYPE }}/plugify.dll -Destination build/bin/win64/
+          Move-Item -Force -Path build/${{ env.BUILD_TYPE }}/s2-plugify.exe -Destination build/bin/win64/
+          New-Item -ItemType Directory -Force -Path build/output/csgo
+          Move-Item -Recurse -Force -Path build/bin -Destination build/output
+          Move-Item -Force -Path build/plugify.pconfig -Destination build/output/csgo
 
       - uses: actions/upload-artifact@v4
         with:
