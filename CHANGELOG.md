@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.8](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.7...v1.0.8) (2025-03-22)
+
+
+### Bug Fixes
+
+* add golang ([f52c19a](https://github.com/untrustedmodders/s2-plugify/commit/f52c19a9e8c97b222591752e5e983dd008ba7127))
+* update config ([5b670e3](https://github.com/untrustedmodders/s2-plugify/commit/5b670e351cdfbc1b841f5c56b656194e863664e4))
+
 ## [1.0.7](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.6...v1.0.7) (2025-03-17)
 
 
