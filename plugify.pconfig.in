@@ -10,6 +10,7 @@
         "https://untrustedmodders.github.io/plugify-module-dotnet/plugify-module-dotnet.json",
         "https://untrustedmodders.github.io/plugify-module-python3.12/plugify-module-python3.12.json",
         "https://untrustedmodders.github.io/plugify-module-v8/plugify-module-v8.json",
+        "https://untrustedmodders.github.io/plugify-module-golang/plugify-module-golang.json",
         "https://untrustedmodders.github.io/polyhook/polyhook.json",
         "https://untrustedmodders.github.io/dynhook/dynhook.json",
         "https://untrustedmodders.github.io/dyncall/dyncall.json",
