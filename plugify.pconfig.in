@@ -1,6 +1,9 @@
 {
     "$schema": "https://raw.githubusercontent.com/untrustedmodders/plugify/refs/heads/main/schemas/config.schema.json",
     "baseDir": "addons/plugify",
+    "configsDir": "configs",
+    "dataDir": "data",
+    "logsDir": "logs",
     "logSeverity": "debug",
     "repositories": [
         "https://untrustedmodders.github.io/plugify-module-cpp/plugify-module-cpp.json",
