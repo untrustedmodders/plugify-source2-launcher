@@ -76,7 +76,7 @@ jobs:
           Move-Item -Force -Path build/external/plugify/${{ env.BUILD_TYPE }}/plugify.dll -Destination build/bin/win64/
           Move-Item -Force -Path build/${{ env.BUILD_TYPE }}/s2-plugify.exe -Destination build/bin/win64/
           New-Item -ItemType Directory -Force -Path build/output/csgo
-          Move-Item -Recurse -Force -Path build/bin -Destination build/output
+          Move-Item -Force -Path build/bin -Destination build/output
           Move-Item -Force -Path build/plugify.pconfig -Destination build/output/csgo
 
       - uses: actions/upload-artifact@v4
