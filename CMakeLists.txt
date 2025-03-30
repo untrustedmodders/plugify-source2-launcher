@@ -67,11 +67,6 @@ else()
     target_compile_options(${PROJECT_NAME} PRIVATE -Wextra -Wshadow -Wconversion) #  -Werror -Wpedantic
 endif()
 
-if(MSVC)
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
-    set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
-endif()
-
 if(LINUX)
     set_property(TARGET ${PROJECT_NAME} PROPERTY LINK_FLAGS "-Wl,-rpath,\\\$ORIGIN/")
 endif()
@@ -96,7 +91,7 @@ set(PLUGIFY_COMPILE_DEFINITIONS
         PLUGIFY_PROJECT_VERSION="${PLUGIFY_PROJECT_VERSION}"
 )
 
-if(WINDOWS)
+if(WIN32)
     set(PLUGIFY_COMPILE_DEFINITIONS
             ${PLUGIFY_COMPILE_DEFINITIONS}
             PLUGIFY_PLATFORM="windows"
