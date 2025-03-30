@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.12](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.11...v1.0.12) (2025-03-30)
+
+
+### Bug Fixes
+
+* windows build ([c206310](https://github.com/untrustedmodders/s2-plugify/commit/c206310c54944ab99fb675a32608a4e3c2ba7eb5))
+
 ## [1.0.11](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.10...v1.0.11) (2025-03-30)
 
 
