@@ -82,7 +82,7 @@ elseif(UNIX)
     target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/sym/version_script.lds")
 endif()
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE
+set(PLUGIFY_COMPILE_DEFINITIONS
         PLUGIFY_PLATFORM_WINDOWS=$<BOOL:${WIN32}>
         PLUGIFY_PLATFORM_APPLE=$<BOOL:${APPLE}>
         PLUGIFY_PLATFORM_LINUX=$<BOOL:${LINUX}>
@@ -95,6 +95,28 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
         PLUGIFY_PROJECT_HOMEPAGE_URL="${CMAKE_PROJECT_HOMEPAGE_URL}"
         PLUGIFY_PROJECT_VERSION="${PLUGIFY_PROJECT_VERSION}"
 )
+
+if(WINDOWS)
+    set(PLUGIFY_COMPILE_DEFINITIONS
+            ${PLUGIFY_COMPILE_DEFINITIONS}
+            PLUGIFY_PLATFORM="windows"
+            PLUGIFY_BINARY="win64"
+    )
+elseif(LINUX)
+    set(PLUGIFY_COMPILE_DEFINITIONS
+            ${PLUGIFY_COMPILE_DEFINITIONS}
+            PLUGIFY_PLATFORM="linux"
+            PLUGIFY_BINARY="linuxsteamrt64"
+    )
+elseif(APPLE)
+    set(PLUGIFY_COMPILE_DEFINITIONS
+            ${PLUGIFY_COMPILE_DEFINITIONS}
+            PLUGIFY_PLATFORM="macos"
+            PLUGIFY_BINARY="linuxsteamrt64"
+    )
+endif()
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE ${PLUGIFY_COMPILE_DEFINITIONS})
 
 if(LINUX)
     set(PLUGIFY_PREFER_OWN_SYMBOLS "true")
