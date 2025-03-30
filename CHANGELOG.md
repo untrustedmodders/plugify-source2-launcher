@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.11](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.10...v1.0.11) (2025-03-30)
+
+
+### Bug Fixes
+
+* linux issues ([71076ba](https://github.com/untrustedmodders/s2-plugify/commit/71076bab5a59ae344dbc50fa02fc920e56ee3a09))
+* update plugify ([a445072](https://github.com/untrustedmodders/s2-plugify/commit/a445072467eca8b505da61fbca4793b33be2e006))
+
 ## [1.0.10](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.9...v1.0.10) (2025-03-27)
 
 
