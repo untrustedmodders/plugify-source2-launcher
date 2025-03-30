@@ -694,7 +694,7 @@ void InitializePlugify(CAppSystemDict* pThis) {
 
 using OnAppSystemLoadedFn = void (*)(CAppSystemDict*);
 OnAppSystemLoadedFn _OnAppSystemLoaded;
-std::set<std::string> g_LoadList;
+std::set<std::string> g_loadList;
 
 void OnAppSystemLoaded(CAppSystemDict* pThis) {
 	_OnAppSystemLoaded(pThis);
@@ -706,7 +706,7 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
 
 	for (const auto& module: pThis->m_Modules) {
 		if (module.m_pModuleName) {
-			auto [_, result] = g_LoadList.insert(module.m_pModuleName);
+			auto [_, result] = g_loadList.insert(module.m_pModuleName);
 			if (result) {
 				if (module.m_pModuleName == moduleName) {
 					InitializePlugify(pThis);

@@ -112,7 +112,7 @@ elseif(APPLE)
     set(PLUGIFY_COMPILE_DEFINITIONS
             ${PLUGIFY_COMPILE_DEFINITIONS}
             PLUGIFY_PLATFORM="macos"
-            PLUGIFY_BINARY="linuxsteamrt64"
+            PLUGIFY_BINARY="osx64"
     )
 endif()
 
