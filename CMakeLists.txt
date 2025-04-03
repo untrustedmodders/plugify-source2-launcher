@@ -1,3 +1,7 @@
+# s2-plugify
+# Copyright (C) 2023-2025 untrustedmodders
+# Licensed under the MIT license. See LICENSE file in the project root for details.
+
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 
 if(POLICY CMP0092)
@@ -5,11 +9,21 @@ if(POLICY CMP0092)
 endif()
 
 
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" VERSION_FILE_CONTENTS)
+string(STRIP "${VERSION_FILE_CONTENTS}" VERSION_FILE_CONTENTS)
+set(S2_VERSION "${VERSION_FILE_CONTENTS}" CACHE STRING "Set version name")
+string(REPLACE "v" "" S2_VERSION "${S2_VERSION}")
+string(REGEX REPLACE "[.+-]" ";" S2_VERSION_LIST ${S2_VERSION})
+list(GET S2_VERSION_LIST 0 S2_VERSION_MAJOR)
+list(GET S2_VERSION_LIST 1 S2_VERSION_MINOR)
+list(GET S2_VERSION_LIST 2 S2_VERSION_PATCH)
+
 project(s2-plugify
-        VERSION 1.0.0.0 
+        VERSION "${S2_VERSION_MAJOR}.${S2_VERSION_MINOR}.${S2_VERSION_PATCH}"
         DESCRIPTION "Plugify S2 Core" 
         HOMEPAGE_URL "https://github.com/untrustedmodders/s2-plugify" 
-        LANGUAGES CXX)
+        LANGUAGES CXX
+)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,6 +43,7 @@ endif()
 #
 set(PLUGIFY_BUILD_SHARED_LIB ON CACHE INTERNAL "")
 set(PLUGIFY_BUILD_ASSEMBLY ON CACHE INTERNAL "")
+set(PLUGIFY_BUILD_CRASHLOGS ON CACHE INTERNAL "")
 set(PLUGIFY_BUILD_TESTS OFF CACHE INTERNAL "")
 if(LINUX)
     set(PLUGIFY_USE_STATIC_STDLIB ON CACHE INTERNAL "")
@@ -53,7 +68,7 @@ file(GLOB_RECURSE PLUGIFY_SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "src/*.cp
 add_executable(${PROJECT_NAME} ${PLUGIFY_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE external/sourcesdk/public)
 
-set(PLUGIFY_LINK_LIBRARIES plugify::plugify plugify::plugify-assembly sourcesdk::sourcesdk)
+set(PLUGIFY_LINK_LIBRARIES plugify::plugify plugify::plugify-assembly plugify::plugify-crashlogs sourcesdk::sourcesdk)
 
 if(NOT COMPILER_SUPPORTS_FORMAT)
     set(PLUGIFY_LINK_LIBRARIES ${PLUGIFY_LINK_LIBRARIES} fmt::fmt-header-only)
@@ -88,7 +103,7 @@ set(PLUGIFY_COMPILE_DEFINITIONS
         PLUGIFY_PROJECT_NAME="${PROJECT_NAME}"
         PLUGIFY_PROJECT_DESCRIPTION="${CMAKE_PROJECT_DESCRIPTION}"
         PLUGIFY_PROJECT_HOMEPAGE_URL="${CMAKE_PROJECT_HOMEPAGE_URL}"
-        PLUGIFY_PROJECT_VERSION="${PLUGIFY_PROJECT_VERSION}"
+        PLUGIFY_PROJECT_VERSION="${S2_VERSION}"
 )
 
 if(WIN32)
