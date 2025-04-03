@@ -15,6 +15,8 @@
 #include <plugify/plugin_descriptor.hpp>
 #include <plugify/plugin_manager.hpp>
 #include <plugify/plugin_reference_descriptor.hpp>
+#include <plugify/debugging.hpp>
+#include <plugify/crashlogs/crashlogs.hpp>
 
 #include <appframework/iappsystem.h>
 #include <convar.h>
@@ -671,6 +673,9 @@ void InitializePlugify(CAppSystemDict* pThis) {
 	std::filesystem::path rootDir(Plat_GetGameDirectory());
 	auto result = s_context->Initialize(rootDir / "csgo");
 	if (result) {
+		if (!plg::is_debugger_present()) {
+			crashlogs::SetCrashlogFolder(s_context->GetConfig().logsDir.native());
+		}
 		s_logger->SetSeverity(s_context->GetConfig().logSeverity.value_or(Severity::Debug));
 
 		if (auto packageManager = s_context->GetPackageManager().lock()) {
@@ -723,6 +728,13 @@ int main(int argc, char* argv[]) {
 	}
 	auto engine_path = binary_path / PLUGIFY_LIBRARY_PREFIX "engine2" PLUGIFY_LIBRARY_SUFFIX;
 	auto parent_path = binary_path.generic_string();
+
+	if (!plg::is_debugger_present()) {
+		crashlogs::BeginMonitoring();
+		crashlogs::SetOnWriteCrashlogCallback([]([[maybe_unused]] std::filesystem::path_view path, std::string_view trace) {
+			CONPRINTE(trace.data());
+		});
+	}
 
 	Assembly engine(engine_path, LoadFlag::AlteredSearchPath | LoadFlag::Lazy, {}, true);
 	if (!engine) {
