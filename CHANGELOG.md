@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.14](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.13...v1.0.14) (2025-04-03)
+
+
+### Bug Fixes
+
+* update int format ([fc6c380](https://github.com/untrustedmodders/s2-plugify/commit/fc6c3806808a9a4d2431d32fe77be2a742c5c512))
+* update plugify ([be4de88](https://github.com/untrustedmodders/s2-plugify/commit/be4de8833a46bdee80138216988b55486ce82773))
+* update plugify ([195abfe](https://github.com/untrustedmodders/s2-plugify/commit/195abfeccb04d15c1ab416222178512d72d3a169))
+
 ## [1.0.13](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.12...v1.0.13) (2025-04-03)
 
 
