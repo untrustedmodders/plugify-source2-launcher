@@ -170,22 +170,18 @@ namespace {
 	}
 
 	ptrdiff_t FormatInt(const std::string& str) {
-		try {
-			size_t pos;
-			ptrdiff_t result = std::stoul(str, &pos);
-			if (pos != str.length()) {
-				throw std::invalid_argument("Trailing characters after the valid part");
-			}
-			return result;
-		} catch (const std::invalid_argument& e) {
-			CONPRINTE(std::format("Invalid argument: {}\n", e.what()).c_str());
-		} catch (const std::out_of_range& e) {
-			CONPRINTE(std::format("Out of range: {}\n", e.what()).c_str());
-		} catch (const std::exception& e) {
-			CONPRINTE(std::format("Conversion error: {}\n", e.what()).c_str());
+		ptrdiff_t result;
+		auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), result);
+
+		if (ec != std::errc{}) {
+			CONPRINTE(std::format("Error: {}", std::make_error_code(ec).message()).c_str());
+			return -1;
+		} else if (ptr != str.data() + str.size()) {
+			CONPRINTE("Invalid argument: trailing characters after the valid part");
+			return -1;
 		}
 
-		return ptrdiff_t(-1);
+		return result;
 	}
 }// namespace
 
