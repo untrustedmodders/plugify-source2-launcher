@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.13](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.12...v1.0.13) (2025-04-03)
+
+
+### Bug Fixes
+
+* add cmake versioning ([074ee5d](https://github.com/untrustedmodders/s2-plugify/commit/074ee5d36cae380ae314d8cc9b51ba206ccef532))
+* update clang tools ([9d82932](https://github.com/untrustedmodders/s2-plugify/commit/9d8293228da4485e62b473e38071e990dd3bc118))
+* update plugify and add crashlogs ([2721658](https://github.com/untrustedmodders/s2-plugify/commit/27216581ccbbfb3f1d07524e6c6c6ccdee2424db))
+
 ## [1.0.12](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.11...v1.0.12) (2025-03-30)
 
 
