@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.15](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.14...v1.0.15) (2025-04-27)
+
+
+### Bug Fixes
+
+* add pthread to linux ([c672b58](https://github.com/untrustedmodders/s2-plugify/commit/c672b58ceaefb43febe697f00b08500337b5505f))
+* update plugify ([54764a3](https://github.com/untrustedmodders/s2-plugify/commit/54764a3bdcdffc5ac3feaa4280303fb8b83b30cd))
+
 ## [1.0.14](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.13...v1.0.14) (2025-04-03)
 
 
