@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.16](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.15...v1.0.16) (2025-05-25)
+
+
+### Bug Fixes
+
+* add crashpad support ([3b7494f](https://github.com/untrustedmodders/s2-plugify/commit/3b7494fb3561be147ff1ac3d03558d96e7c1125a))
+* update deps ([34aaad5](https://github.com/untrustedmodders/s2-plugify/commit/34aaad527eb492ef74a273a1cf6b9aa8edab06d9))
+* update deps ([3ba4745](https://github.com/untrustedmodders/s2-plugify/commit/3ba4745dd846062b59c514cbd7cdb39bcc432b99))
+* update plugify ([2ae442e](https://github.com/untrustedmodders/s2-plugify/commit/2ae442e118ddd940e2fb344788e4dcd4dfbcebac))
+
 ## [1.0.15](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.14...v1.0.15) (2025-04-27)
 
 
