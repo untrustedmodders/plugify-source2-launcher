@@ -14,7 +14,8 @@
         "https://untrustedmodders.github.io/polyhook/polyhook.json",
         "https://untrustedmodders.github.io/dynhook/dynhook.json",
         "https://untrustedmodders.github.io/dyncall/dyncall.json",
-        "https://untrustedmodders.github.io/plugify-source-2/s2sdk.json"
+        "https://untrustedmodders.github.io/plugify-source-2/s2sdk.json",
+        "https://plugify.net/plugify-configs/plugify-configs.json"
     ],
     "preferOwnSymbols": ${PLUGIFY_PREFER_OWN_SYMBOLS}
 }

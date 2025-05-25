@@ -16,7 +16,11 @@
 #include <plugify/plugin_manager.hpp>
 #include <plugify/plugin_reference_descriptor.hpp>
 #include <plugify/debugging.hpp>
-#include <plugify/crashlogs/crashlogs.hpp>
+
+#include <client/crashpad_client.h>
+#include <client/crash_report_database.h>
+#include <client/settings.h>
+#include <glaze/glaze.hpp>
 
 #include <appframework/iappsystem.h>
 #include <convar.h>
@@ -98,8 +102,8 @@ std::shared_ptr<S2Logger> s_logger;
 std::shared_ptr<IPlugify> s_context;
 PlugifyState s_state;
 
-#define CONPRINT(x) s_logger->Log(x, LS_MESSAGE, Color(255, 255, 0, 255))
-#define CONPRINTE(x) s_logger->Log(x, LS_WARNING, Color(255, 0, 0, 255))
+#define PLG_LOG(x) s_logger->Log(x, LS_MESSAGE, Color(255, 255, 0, 255))
+#define PLG_ERROR(x) s_logger->Log(x, LS_WARNING, Color(255, 0, 0, 255))
 
 namespace {
 	template<typename S, typename T, typename F>
@@ -168,16 +172,30 @@ namespace {
 			std::format_to(std::back_inserter(out), "  Update: {}\n", updateURL);
 		}
 	}
+	
+	std::string ReadText(const std::filesystem::path& filepath) {
+		std::ifstream is(filepath, std::ios::binary);
 
+		if (!is.is_open()) {
+			PLG_ERROR(std::format("File: '{}' could not be opened", filepath.string()).c_str());
+			return {};
+		}
+
+		// Stop eating new lines in binary mode!!!
+		is.unsetf(std::ios::skipws);
+
+		return { std::istreambuf_iterator<char>{is}, std::istreambuf_iterator<char>{} };
+	}
+	
 	ptrdiff_t FormatInt(const std::string& str) {
 		ptrdiff_t result;
 		auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), result);
 
 		if (ec != std::errc{}) {
-			CONPRINTE(std::format("Error: {}", std::make_error_code(ec).message()).c_str());
+			PLG_ERROR(std::format("Error: {}", std::make_error_code(ec).message()).c_str());
 			return -1;
 		} else if (ptr != str.data() + str.size()) {
-			CONPRINTE("Invalid argument: trailing characters after the valid part");
+			PLG_ERROR("Invalid argument: trailing characters after the valid part");
 			return -1;
 		}
 
@@ -210,7 +228,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
 	if (arguments.size() > 1) {
 		if (arguments[1] == "help" || arguments[1] == "-h") {
-			CONPRINT("Plugify Menu\n"
+			PLG_LOG("Plugify Menu\n"
 					 "(c) untrustedmodders\n"
 					 "https://github.com/untrustedmodders\n"
 					 "usage: plg <command> [options] [arguments]\n"
@@ -248,7 +266,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 		}
 
 		else if (arguments[1] == "version" || arguments[1] == "-v") {
-			CONPRINT(R"(      ____)"
+			PLG_LOG(R"(      ____)"
 					 "\n"
 					 R"( ____|    \         Plugify )" PLUGIFY_PROJECT_VERSION "\n"
 					 R"((____|     `._____  )"
@@ -265,16 +283,16 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 			packageManager->Reload();
 			if (!options.contains("--ignore") && !options.contains("-i")) {
 				if (packageManager->HasMissedPackages()) {
-					CONPRINTE("Plugin manager has missing packages, run 'install --missing' to resolve issues.\n");
+					PLG_ERROR("Plugin manager has missing packages, run 'install --missing' to resolve issues.\n");
 					return;
 				}
 				if (packageManager->HasConflictedPackages()) {
-					CONPRINTE("Plugin manager has conflicted packages, run 'remove --conflict' to resolve issues.\n");
+					PLG_ERROR("Plugin manager has conflicted packages, run 'remove --conflict' to resolve issues.\n");
 					return;
 				}
 			}
 			if (pluginManager->IsInitialized()) {
-				CONPRINTE("Plugin manager already loaded.\n");
+				PLG_ERROR("Plugin manager already loaded.\n");
 			} else {
 				s_state = PlugifyState::Load;
 			}
@@ -282,7 +300,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
 		else if (arguments[1] == "unload") {
 			if (!pluginManager->IsInitialized()) {
-				CONPRINTE("Plugin manager already unloaded.\n");
+				PLG_ERROR("Plugin manager already unloaded.\n");
 			} else {
 				s_state = PlugifyState::Unload;
 			}
@@ -290,7 +308,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
 		else if (arguments[1] == "reload") {
 			if (!pluginManager->IsInitialized()) {
-				CONPRINTE("Plugin manager not loaded.");
+				PLG_ERROR("Plugin manager not loaded.");
 				packageManager->Reload();
 			} else {
 				s_state = PlugifyState::Reload;
@@ -299,7 +317,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
 		else if (arguments[1] == "plugins") {
 			if (!pluginManager->IsInitialized()) {
-				CONPRINTE("You must load plugin manager before query any information from it.\n");
+				PLG_ERROR("You must load plugin manager before query any information from it.\n");
 				return;
 			}
 
@@ -310,12 +328,12 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 				Print<plugify::PluginState>(sMessage, plugin, plugify::PluginUtils::ToString);
 			}
 
-			CONPRINT(sMessage.c_str());
+			PLG_LOG(sMessage.c_str());
 		}
 
 		else if (arguments[1] == "modules") {
 			if (!pluginManager->IsInitialized()) {
-				CONPRINTE("You must load plugin manager before query any information from it.\n");
+				PLG_ERROR("You must load plugin manager before query any information from it.\n");
 				return;
 			}
 			auto count = pluginManager->GetModules().size();
@@ -324,13 +342,13 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 				Print<plugify::ModuleState>(sMessage, module, plugify::ModuleUtils::ToString);
 			}
 
-			CONPRINT(sMessage.c_str());
+			PLG_LOG(sMessage.c_str());
 		}
 
 		else if (arguments[1] == "plugin") {
 			if (arguments.size() > 2) {
 				if (!pluginManager->IsInitialized()) {
-					CONPRINTE("You must load plugin manager before query any information from it.\n");
+					PLG_ERROR("You must load plugin manager before query any information from it.\n");
 					return;
 				}
 				auto plugin = options.contains("--uuid") || options.contains("-u") ? pluginManager->FindPluginFromId(FormatInt(arguments[2])) : pluginManager->FindPlugin(arguments[2]);
@@ -350,19 +368,19 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 					}
 					std::format_to(std::back_inserter(sMessage), "  File: {}\n\n", descriptor.GetEntryPoint());
 
-					CONPRINT(sMessage.c_str());
+					PLG_LOG(sMessage.c_str());
 				} else {
-					CONPRINTE(std::format("Plugin {} not found.\n", arguments[2]).c_str());
+					PLG_ERROR(std::format("Plugin {} not found.\n", arguments[2]).c_str());
 				}
 			} else {
-				CONPRINTE("You must provide name.\n");
+				PLG_ERROR("You must provide name.\n");
 			}
 		}
 
 		else if (arguments[1] == "module") {
 			if (arguments.size() > 2) {
 				if (!pluginManager->IsInitialized()) {
-					CONPRINTE("You must load plugin manager before query any information from it.");
+					PLG_ERROR("You must load plugin manager before query any information from it.");
 					return;
 				}
 				auto module = options.contains("--uuid") || options.contains("-u") ? pluginManager->FindModuleFromId(FormatInt(arguments[2])) : pluginManager->FindModule(arguments[2]);
@@ -373,18 +391,18 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 					std::format_to(std::back_inserter(sMessage), "  Language: {}\n", module.GetLanguage());
 					std::format_to(std::back_inserter(sMessage), "  File: {}\n\n", std::filesystem::path(module.GetFilePath()).string());
 
-					CONPRINT(sMessage.c_str());
+					PLG_LOG(sMessage.c_str());
 				} else {
-					CONPRINTE(std::format("Module {} not found.\n", arguments[2]).c_str());
+					PLG_ERROR(std::format("Module {} not found.\n", arguments[2]).c_str());
 				}
 			} else {
-				CONPRINTE("You must provide name.\n");
+				PLG_ERROR("You must provide name.\n");
 			}
 		}
 
 		else if (arguments[1] == "snapshot") {
 			if (pluginManager->IsInitialized()) {
-				CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
+				PLG_ERROR("You must unload plugin manager before bring any change with package manager.\n");
 				return;
 			}
 			packageManager->SnapshotPackages(plugify->GetConfig().baseDir / std::format("snapshot_{}.wpackagemanifest", DateTime::Get("%Y_%m_%d_%H_%M_%S")), true);
@@ -392,7 +410,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
 		else if (arguments[1] == "repo") {
 			if (pluginManager->IsInitialized()) {
-				CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
+				PLG_ERROR("You must unload plugin manager before bring any change with package manager.\n");
 				return;
 			}
 
@@ -405,20 +423,20 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 					packageManager->Reload();
 				}
 			} else {
-				CONPRINTE("You must give at least one repository to add.\n");
+				PLG_ERROR("You must give at least one repository to add.\n");
 			}
 		}
 
 		else if (arguments[1] == "install") {
 			if (pluginManager->IsInitialized()) {
-				CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
+				PLG_ERROR("You must unload plugin manager before bring any change with package manager.\n");
 				return;
 			}
 			if (options.contains("--missing") || options.contains("-m")) {
 				if (packageManager->HasMissedPackages()) {
 					packageManager->InstallMissedPackages();
 				} else {
-					CONPRINT("No missing packages were found.\n");
+					PLG_LOG("No missing packages were found.\n");
 				}
 			} else {
 				if (arguments.size() > 2) {
@@ -430,14 +448,14 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 						packageManager->InstallPackages(std::span(arguments.begin() + 2, arguments.size() - 2));
 					}
 				} else {
-					CONPRINTE("You must give at least one requirement to install.\n");
+					PLG_ERROR("You must give at least one requirement to install.\n");
 				}
 			}
 		}
 
 		else if (arguments[1] == "remove") {
 			if (pluginManager->IsInitialized()) {
-				CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
+				PLG_ERROR("You must unload plugin manager before bring any change with package manager.\n");
 				return;
 			}
 			if (options.contains("--all") || options.contains("-a")) {
@@ -446,20 +464,20 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 				if (packageManager->HasConflictedPackages()) {
 					packageManager->UninstallConflictedPackages();
 				} else {
-					CONPRINT("No conflicted packages were found.\n");
+					PLG_LOG("No conflicted packages were found.\n");
 				}
 			} else {
 				if (arguments.size() > 2) {
 					packageManager->UninstallPackages(std::span(arguments.begin() + 2, arguments.size() - 2));
 				} else {
-					CONPRINTE("You must give at least one requirement to remove.\n");
+					PLG_ERROR("You must give at least one requirement to remove.\n");
 				}
 			}
 		}
 
 		else if (arguments[1] == "update") {
 			if (pluginManager->IsInitialized()) {
-				CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
+				PLG_ERROR("You must unload plugin manager before bring any change with package manager.\n");
 				return;
 			}
 			if (options.contains("--all") || options.contains("-a")) {
@@ -468,31 +486,31 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 				if (arguments.size() > 2) {
 					packageManager->UpdatePackages(std::span(arguments.begin() + 2, arguments.size() - 2));
 				} else {
-					CONPRINTE("You must give at least one requirement to update.\n");
+					PLG_ERROR("You must give at least one requirement to update.\n");
 				}
 			}
 		}
 
 		else if (arguments[1] == "list") {
 			if (pluginManager->IsInitialized()) {
-				CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
+				PLG_ERROR("You must unload plugin manager before bring any change with package manager.\n");
 				return;
 			}
 			auto localPackages = packageManager->GetLocalPackages();
 			auto count = localPackages.size();
 			if (!count) {
-				CONPRINTE("No local packages found.\n");
+				PLG_ERROR("No local packages found.\n");
 			} else {
-				CONPRINT(std::format("Listing {} local package{}:\n", count, (count > 1) ? "s" : "").c_str());
+				PLG_LOG(std::format("Listing {} local package{}:\n", count, (count > 1) ? "s" : "").c_str());
 			}
 			for (const auto& localPackage: localPackages) {
-				CONPRINT(std::format("  {} [{}] (v{}) at {}\n", localPackage->name, localPackage->type, localPackage->version, localPackage->path.string()).c_str());
+				PLG_LOG(std::format("  {} [{}] (v{}) at {}\n", localPackage->name, localPackage->type, localPackage->version, localPackage->path.string()).c_str());
 			}
 		}
 
 		else if (arguments[1] == "query") {
 			if (pluginManager->IsInitialized()) {
-				CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
+				PLG_ERROR("You must unload plugin manager before bring any change with package manager.\n");
 				return;
 			}
 			auto remotePackages = packageManager->GetRemotePackages();
@@ -506,34 +524,34 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 				}
 			}
 
-			CONPRINT(sMessage.c_str());
+			PLG_LOG(sMessage.c_str());
 		}
 
 		else if (arguments[1] == "show") {
 			if (pluginManager->IsInitialized()) {
-				CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
+				PLG_ERROR("You must unload plugin manager before bring any change with package manager.\n");
 				return;
 			}
 			if (arguments.size() > 2) {
 				auto package = packageManager->FindLocalPackage(arguments[2]);
 				if (package) {
-					CONPRINT(std::format("  Name: {}\n"
+					PLG_LOG(std::format("  Name: {}\n"
 										 "  Type: {}\n"
 										 "  Version: {}\n"
 										 "  File: {}\n\n",
 										 package->name, package->type, package->version, package->path.string())
 									 .c_str());
 				} else {
-					CONPRINTE(std::format("Package {} not found.\n", arguments[2]).c_str());
+					PLG_ERROR(std::format("Package {} not found.\n", arguments[2]).c_str());
 				}
 			} else {
-				CONPRINTE("You must provide name.\n");
+				PLG_ERROR("You must provide name.\n");
 			}
 		}
 
 		else if (arguments[1] == "search") {
 			if (pluginManager->IsInitialized()) {
-				CONPRINTE("You must unload plugin manager before bring any change with package manager.\n");
+				PLG_ERROR("You must unload plugin manager before bring any change with package manager.\n");
 				return;
 			}
 			if (arguments.size() > 2) {
@@ -559,15 +577,15 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 						std::format_to(std::back_inserter(combined), "\n\n");
 						sMessage += combined;
 
-						CONPRINT(sMessage.c_str());
+						PLG_LOG(sMessage.c_str());
 					} else {
-						CONPRINT("\n");
+						PLG_LOG("\n");
 					}
 				} else {
-					CONPRINTE(std::format("Package {} not found.\n", arguments[2]).c_str());
+					PLG_ERROR(std::format("Package {} not found.\n", arguments[2]).c_str());
 				}
 			} else {
-				CONPRINTE("You must provide name.\n");
+				PLG_ERROR("You must provide name.\n");
 			}
 		}
 
@@ -576,10 +594,10 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 			sMessage += "usage: plugify <command> [options] [arguments]\n"
 						"Try plugify help or -h for more information.\n";
 
-			CONPRINTE(sMessage.c_str());
+			PLG_ERROR(sMessage.c_str());
 		}
 	} else {
-		CONPRINTE("usage: plg <command> [options] [arguments]\n"
+		PLG_ERROR("usage: plg <command> [options] [arguments]\n"
 				  "Try plg help or -h for more information.\n");
 	}
 }
@@ -602,7 +620,7 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 			}
 
 			pluginManager->Initialize();
-			CONPRINT("Plugin manager was loaded.\n");
+			PLG_LOG("Plugin manager was loaded.\n");
 			break;
 		}
 		case PlugifyState::Unload: {
@@ -613,7 +631,7 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 			}
 
 			pluginManager->Terminate();
-			CONPRINT("Plugin manager was unloaded.\n");
+			PLG_LOG("Plugin manager was unloaded.\n");
 
 			if (auto packageManager = s_context->GetPackageManager().lock()) {
 				packageManager->Reload();
@@ -634,7 +652,7 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 			}
 
 			pluginManager->Initialize();
-			CONPRINT("Plugin manager was reloaded.");
+			PLG_LOG("Plugin manager was reloaded.");
 			break;
 		}
 		case PlugifyState::Wait:
@@ -669,20 +687,17 @@ void InitializePlugify(CAppSystemDict* pThis) {
 	std::filesystem::path rootDir(Plat_GetGameDirectory());
 	auto result = s_context->Initialize(rootDir / "csgo");
 	if (result) {
-		if (!plg::is_debugger_present()) {
-			crashlogs::SetCrashlogFolder(s_context->GetConfig().logsDir.native());
-		}
 		s_logger->SetSeverity(s_context->GetConfig().logSeverity.value_or(Severity::Debug));
 
 		if (auto packageManager = s_context->GetPackageManager().lock()) {
 			packageManager->Initialize();
 
 			if (packageManager->HasMissedPackages()) {
-				CONPRINTE("Plugin manager has missing packages, run 'update --missing' to resolve issues.");
+				PLG_ERROR("Plugin manager has missing packages, run 'update --missing' to resolve issues.");
 				return;
 			}
 			if (packageManager->HasConflictedPackages()) {
-				CONPRINTE("Plugin manager has conflicted packages, run 'remove --conflict' to resolve issues.");
+				PLG_ERROR("Plugin manager has conflicted packages, run 'remove --conflict' to resolve issues.");
 				return;
 			}
 		}
@@ -717,6 +732,70 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
 	}
 }
 
+using namespace plugify;
+using namespace crashpad;
+
+struct Metadata {
+	std::string url;
+	std::string handlerApp;
+	std::string databaseDir;
+	std::string metricsDir;
+	std::map<std::string, std::string> annotations;
+	std::vector<std::string> arguments;
+	std::vector<std::string> attachments;
+	std::optional<bool> restartable;
+	std::optional<bool> asynchronous_start;
+	std::optional<bool> enabled;
+};
+
+bool InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesystem::path& annotationsPath) {
+	auto json = ReadText(exeDir / annotationsPath);
+	auto metadata = glz::read_jsonc<Metadata>(json);
+	if (!metadata.has_value()) {
+		PLG_ERROR(std::format("Metadata: '{}' has JSON parsing error: {}", annotationsPath.string(), glz::format_error(metadata.error(), json)).c_str());
+		return false;
+	}
+
+	if (!metadata->enabled.value_or(true)) {
+		return false;
+	}
+
+	base::FilePath handlerApp(exeDir / std::format(PLUGIFY_EXECUTABLE_PREFIX "{}" PLUGIFY_EXECUTABLE_SUFFIX, metadata->handlerApp));
+	base::FilePath databaseDir(exeDir / metadata->databaseDir);
+	base::FilePath metricsDir(exeDir / metadata->metricsDir);
+
+	std::unique_ptr<CrashReportDatabase> database = CrashReportDatabase::Initialize(databaseDir);
+	if (database == nullptr)
+		return false;
+
+	// File paths of attachments to uploaded with minidump file at crash time - default upload limit is 2MB
+	std::vector<base::FilePath> attachments;
+	attachments.reserve(metadata->attachments.size());
+	for (const auto& attachment : metadata->attachments) {
+		attachments.emplace_back(exeDir / attachment);
+	}
+
+	// Enable automated crash uploads
+	Settings* settings = database->GetSettings();
+	if (settings == nullptr)
+		return false;
+	settings->SetUploadsEnabled(!metadata->url.empty());
+
+	// Start crash handler
+	auto* client = new CrashpadClient();
+	bool status = client->StartHandler(
+		handlerApp,
+		databaseDir,
+		metricsDir,
+		metadata->url,
+		metadata->annotations,
+		metadata->arguments,
+		metadata->restartable.value_or(true),
+		metadata->asynchronous_start.value_or(false),
+		attachments);
+	return status;
+}
+
 int main(int argc, char* argv[]) {
 	auto binary_path = std::filesystem::current_path();
 	if (is_directory(binary_path) && binary_path.filename() == "game") {
@@ -726,10 +805,7 @@ int main(int argc, char* argv[]) {
 	auto parent_path = binary_path.generic_string();
 
 	if (!plg::is_debugger_present()) {
-		crashlogs::BeginMonitoring();
-		crashlogs::SetOnWriteCrashlogCallback([]([[maybe_unused]] std::filesystem::path_view path, std::string_view trace) {
-			CONPRINTE(trace.data());
-		});
+		InitializeCrashpad(binary_path, "crashpad.jsonc");
 	}
 
 	Assembly engine(engine_path, LoadFlag::AlteredSearchPath | LoadFlag::Lazy, {}, true);
