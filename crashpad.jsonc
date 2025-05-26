@@ -3,6 +3,7 @@
   "handlerApp": "crashpad_handler",
   "databaseDir": "crashpad",
   "metricsDir": "crashpad",
+  "logsDir": "logs",
   "annotations": {
     "format": "minidump",
     "database": "Plugify",
@@ -19,5 +20,6 @@
   ],
   "restartable": true,
   "asynchronous_start": false,
+  "listen_console": true,
   "enabled": false
 }

@@ -1,6 +1,9 @@
+#include <condition_variable>
 #include <filesystem>
 #include <iostream>
 #include <unordered_set>
+#include <queue>
+#include <thread>
 
 #include <plugify/assembly.hpp>
 #include <plugify/compat_format.hpp>
@@ -100,6 +103,7 @@ enum class PlugifyState {
 
 std::shared_ptr<S2Logger> s_logger;
 std::shared_ptr<IPlugify> s_context;
+std::unique_ptr<ILoggingListener> s_listener;
 PlugifyState s_state;
 
 #define PLG_LOG(x) s_logger->Log(x, LS_MESSAGE, Color(255, 255, 0, 255))
@@ -732,6 +736,85 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
 	}
 }
 
+class FileLoggingListener final : public ILoggingListener {
+public:
+    FileLoggingListener(const std::filesystem::path& filename, bool async = true)
+        : _async(async), _running(true), _file(filename, std::ios::app) {
+    	std::error_code ec;
+    	std::filesystem::create_directories(filename.parent_path(), ec); // Ensure directory exists
+        if (!_file.is_open()) {
+            PLG_ERROR(std::format("Failed to open log file: {}", filename.string()).c_str());
+        	return;
+        }
+        if (_async) {
+            _worker_thread = std::thread(&FileLoggingListener::processQueue, this);
+        }
+    }
+
+    ~FileLoggingListener() {
+        if (_async) {
+            stop();
+        }
+        _file.close();
+    }
+
+    void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
+        if (pContext && (pContext->m_Flags & LCF_CONSOLE_ONLY) == 0) {
+            auto timestamp = DateTime::Get();
+            auto message = std::format("[{}] {}", timestamp, pMessage);
+
+            if (_async) {
+                {
+                    std::lock_guard<std::mutex> lock(_queue_mutex);
+                    _message_queue.push(message);
+                }
+                _condition.notify_one();
+            } else {
+                write(message);
+            }
+        }
+    }
+
+private:
+    bool _async;
+    std::atomic<bool> _running;
+    std::mutex _queue_mutex;
+    std::queue<std::string> _message_queue;
+    std::condition_variable _condition;
+    std::thread _worker_thread;
+    std::mutex _file_mutex;
+    std::ofstream _file;
+
+    void write(const std::string& message) {
+        std::lock_guard<std::mutex> lock(_file_mutex);
+        _file << message << '\n';
+        _file.flush(); // Immediate write, can be optimized
+    }
+
+    void processQueue() {
+        while (_running) {
+            std::unique_lock<std::mutex> lock(_queue_mutex);
+            _condition.wait(lock, [this] { return !_message_queue.empty() || !_running; });
+
+            while (!_message_queue.empty()) {
+                auto message = std::move(_message_queue.front());
+                _message_queue.pop();
+                lock.unlock();
+                write(message);
+                lock.lock();
+            }
+        }
+    }
+
+    void stop() {
+        _running = false;
+        _condition.notify_one();
+        if (_worker_thread.joinable()) {
+            _worker_thread.join();
+        }
+    }
+};
+
 using namespace plugify;
 using namespace crashpad;
 
@@ -740,11 +823,13 @@ struct Metadata {
 	std::string handlerApp;
 	std::string databaseDir;
 	std::string metricsDir;
+	std::string logsDir;
 	std::map<std::string, std::string> annotations;
 	std::vector<std::string> arguments;
 	std::vector<std::string> attachments;
 	std::optional<bool> restartable;
 	std::optional<bool> asynchronous_start;
+	std::optional<bool> listen_console;
 	std::optional<bool> enabled;
 };
 
@@ -756,7 +841,7 @@ bool InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesyst
 		return false;
 	}
 
-	if (!metadata->enabled.value_or(true)) {
+	if (!metadata->enabled.value_or(false)) {
 		return false;
 	}
 
@@ -770,7 +855,7 @@ bool InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesyst
 
 	// File paths of attachments to uploaded with minidump file at crash time - default upload limit is 2MB
 	std::vector<base::FilePath> attachments;
-	attachments.reserve(metadata->attachments.size());
+	attachments.reserve(metadata->attachments.size() + 1);
 	for (const auto& attachment : metadata->attachments) {
 		attachments.emplace_back(exeDir / attachment);
 	}
@@ -781,19 +866,30 @@ bool InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesyst
 		return false;
 	settings->SetUploadsEnabled(!metadata->url.empty());
 
+	if (metadata->listen_console.value_or(false)) {
+		auto timestamp = DateTime::Get();
+		std::replace(timestamp.begin(), timestamp.end(), ' ', '_');
+		std::replace(timestamp.begin(), timestamp.end(), ':', '-');
+		auto loggingPath = exeDir / metadata->logsDir / std::format("session_{}.log", timestamp);
+
+		s_listener = std::make_unique<FileLoggingListener>(loggingPath);
+		LoggingSystem_PushLoggingState(false, false);
+		LoggingSystem_RegisterLoggingListener(s_listener.get());
+		attachments.emplace_back(loggingPath);
+	}
+
 	// Start crash handler
 	auto* client = new CrashpadClient();
-	bool status = client->StartHandler(
+	return client->StartHandler(
 		handlerApp,
 		databaseDir,
 		metricsDir,
 		metadata->url,
 		metadata->annotations,
 		metadata->arguments,
-		metadata->restartable.value_or(true),
+		metadata->restartable.value_or(false),
 		metadata->asynchronous_start.value_or(false),
 		attachments);
-	return status;
 }
 
 int main(int argc, char* argv[]) {
@@ -827,8 +923,13 @@ int main(int argc, char* argv[]) {
 	auto command_line = GenerateCmdLine(argc, argv);
 	int res = Source2Main(nullptr, nullptr, command_line.c_str(), 0, parent_path.c_str(), PLUGIFY_GAME_NAME);
 
+	if (s_listener) {
+		LoggingSystem_PopLoggingState();
+	}
+
 	s_context.reset();
 	s_logger.reset();
+	s_listener.reset();
 
 	return res;
 }
