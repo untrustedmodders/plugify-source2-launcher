@@ -921,7 +921,7 @@ int main(int argc, char* argv[]) {
 
 	Assembly engine(engine_path, LoadFlag::AlteredSearchPath | LoadFlag::Lazy, {}, true);
 	if (!engine) {
-		std::cerr << "launcher error: " << engine.GetError() << std::endl;
+		std::cerr << "Launcher error: " << engine.GetError() << std::endl;
 		return 1;
 	}
 

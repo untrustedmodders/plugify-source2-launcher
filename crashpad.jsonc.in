@@ -3,12 +3,12 @@
   "handlerApp": "crashpad_handler",
   "databaseDir": "crashpad",
   "metricsDir": "crashpad",
-  "logsDir": "../../csgo/addons/plugify/logs",
+  "logsDir": "../../${PLUGIFY_GAME_NAME}/addons/plugify/logs",
   "annotations": {
     "format": "minidump",
     "database": "Plugify",
-    "product": "PlgTest",
-    "version": "1.0.0",
+    "product": "${PROJECT_DESCRIPTION}",
+    "version": "${S2_VERSION}",
     "key": "",
     "user": "",
     "list_annotations": ""
