@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.17](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.16...v1.0.17) (2025-05-26)
+
+
+### Bug Fixes
+
+* win build issue ([0dbe0e2](https://github.com/untrustedmodders/s2-plugify/commit/0dbe0e25ecdda4b7a22a7dd99cbbcb72e92f8d17))
+
 ## [1.0.16](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.15...v1.0.16) (2025-05-25)
 
 
