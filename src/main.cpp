@@ -667,6 +667,11 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 }
 
 void InitializePlugify(CAppSystemDict* pThis) {
+	if (s_listener) {
+		LoggingSystem_PushLoggingState(false, false);
+		LoggingSystem_RegisterLoggingListener(s_listener.get());
+	}
+
 	std::string_view interfaceName = CVAR_INTERFACE_VERSION;
 
 	for (const auto& system: pThis->m_Systems) {
@@ -739,11 +744,12 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
 class FileLoggingListener final : public ILoggingListener {
 public:
     FileLoggingListener(const std::filesystem::path& filename, bool async = true)
-        : _async(async), _running(true), _file(filename, std::ios::app) {
+        : _async(async), _running(true) {
     	std::error_code ec;
     	std::filesystem::create_directories(filename.parent_path(), ec); // Ensure directory exists
+    	_file = std::ofstream(filename, std::ios::app);
         if (!_file.is_open()) {
-            PLG_ERROR(std::format("Failed to open log file: {}", filename.string()).c_str());
+            std::cerr << std::format("Failed to open log file: {}", filename.string()) << std::endl;
         	return;
         }
         if (_async) {
@@ -760,17 +766,25 @@ public:
 
     void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
         if (pContext && (pContext->m_Flags & LCF_CONSOLE_ONLY) == 0) {
+			std::string_view message = pMessage;
+        	if (message.ends_with('\n')) {
+        		message = message.substr(0, message.size() - 1);
+        	}
+        	if (message.empty()) {
+        		return;
+        	}
+
             auto timestamp = DateTime::Get();
-            auto message = std::format("[{}] {}", timestamp, pMessage);
+			auto formated_message = std::format("[{}] {}", timestamp, message);
 
             if (_async) {
                 {
                     std::lock_guard<std::mutex> lock(_queue_mutex);
-                    _message_queue.push(message);
+                    _message_queue.emplace(std::move(formated_message));
                 }
                 _condition.notify_one();
             } else {
-                write(message);
+                write(formated_message);
             }
         }
     }
@@ -837,7 +851,7 @@ bool InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesyst
 	auto json = ReadText(exeDir / annotationsPath);
 	auto metadata = glz::read_jsonc<Metadata>(json);
 	if (!metadata.has_value()) {
-		PLG_ERROR(std::format("Metadata: '{}' has JSON parsing error: {}", annotationsPath.string(), glz::format_error(metadata.error(), json)).c_str());
+		std::cerr << std::format("Metadata: '{}' has JSON parsing error: {}", annotationsPath.string(), glz::format_error(metadata.error(), json)) << std::endl;
 		return false;
 	}
 
@@ -855,7 +869,7 @@ bool InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesyst
 
 	// File paths of attachments to uploaded with minidump file at crash time - default upload limit is 2MB
 	std::vector<base::FilePath> attachments;
-	attachments.reserve(metadata->attachments.size() + 1);
+	attachments.reserve(metadata->attachments.size());
 	for (const auto& attachment : metadata->attachments) {
 		attachments.emplace_back(exeDir / attachment);
 	}
@@ -870,12 +884,13 @@ bool InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesyst
 		auto timestamp = DateTime::Get();
 		std::replace(timestamp.begin(), timestamp.end(), ' ', '_');
 		std::replace(timestamp.begin(), timestamp.end(), ':', '-');
-		auto loggingPath = exeDir / metadata->logsDir / std::format("session_{}.log", timestamp);
 
+		auto loggingPath = exeDir / metadata->logsDir / std::format("session_{}.log", timestamp);
 		s_listener = std::make_unique<FileLoggingListener>(loggingPath);
-		LoggingSystem_PushLoggingState(false, false);
-		LoggingSystem_RegisterLoggingListener(s_listener.get());
-		attachments.emplace_back(loggingPath);
+
+		std::filesystem::path path = "CONSOLE=";
+		path += loggingPath;
+		attachments.emplace_back(std::move(path));
 	}
 
 	// Start crash handler
