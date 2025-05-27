@@ -888,7 +888,7 @@ bool InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesyst
 		auto loggingPath = exeDir / metadata->logsDir / std::format("session_{}.log", timestamp);
 		s_listener = std::make_unique<FileLoggingListener>(loggingPath);
 
-		std::filesystem::path path = "CONSOLE=";
+		std::filesystem::path path = "console.log=";
 		path += loggingPath;
 		attachments.emplace_back(std::move(path));
 	}
