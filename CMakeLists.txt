@@ -99,7 +99,7 @@ elseif(UNIX)
     target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/sym/version_script.lds")
 endif()
 
-set(PLUGIFY_GAME_NAME "csgo")
+set(PLUGIFY_GAME_NAME "csgo" CACHE INTERNAL "Set game name")
 set(PLUGIFY_COMPILE_DEFINITIONS
         PLUGIFY_PLATFORM_WINDOWS=$<BOOL:${WIN32}>
         PLUGIFY_PLATFORM_APPLE=$<BOOL:${APPLE}>

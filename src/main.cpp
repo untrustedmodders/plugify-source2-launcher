@@ -694,7 +694,7 @@ void InitializePlugify(CAppSystemDict* pThis) {
 	s_context->SetLogger(s_logger);
 
 	std::filesystem::path rootDir(Plat_GetGameDirectory());
-	auto result = s_context->Initialize(rootDir / "csgo");
+	auto result = s_context->Initialize(rootDir / PLUGIFY_GAME_NAME);
 	if (result) {
 		s_logger->SetSeverity(s_context->GetConfig().logSeverity.value_or(Severity::Debug));
 
@@ -727,7 +727,7 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
 	if (s_context)
 		return;
 
-	std::string_view moduleName = "matchmaking";
+	std::string_view moduleName = "v8system";
 
 	for (const auto& module: pThis->m_Modules) {
 		if (module.m_pModuleName) {
