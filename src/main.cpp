@@ -672,7 +672,7 @@ void InitializePlugify(CAppSystemDict* pThis) {
 		LoggingSystem_RegisterLoggingListener(s_listener.get());
 	}
 
-	std::string_view interfaceName = CVAR_INTERFACE_VERSION;
+	constexpr std::string_view interfaceName = CVAR_INTERFACE_VERSION;
 
 	for (const auto& system: pThis->m_Systems) {
 		if (system.m_pInterfaceName == interfaceName) {
@@ -727,7 +727,7 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
 	if (s_context)
 		return;
 
-	std::string_view moduleName = "v8system";
+	constexpr std::string_view moduleName = PLUGIFY_GAME_START;
 
 	for (const auto& module: pThis->m_Modules) {
 		if (module.m_pModuleName) {
