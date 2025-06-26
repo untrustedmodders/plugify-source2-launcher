@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.18](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.17...v1.0.18) (2025-06-26)
+
+
+### Bug Fixes
+
+* add crashpad console logger ([963d0b3](https://github.com/untrustedmodders/s2-plugify/commit/963d0b3cd1f1fe6ceb4f9189ef31084daf0a224d))
+* add deadlock support ([d73d633](https://github.com/untrustedmodders/s2-plugify/commit/d73d633b89f56042509ade9b6e5c8d1f0a6f6bba))
+* add default build type ([b6ae0d5](https://github.com/untrustedmodders/s2-plugify/commit/b6ae0d59d6fc6ea170d031dd1e5f13c044e07dfc))
+* add lib chooser for startup ([eb21026](https://github.com/untrustedmodders/s2-plugify/commit/eb21026df2b267e0a6ee67f114641bc6c7263697))
+* add malloc override ([2c85f31](https://github.com/untrustedmodders/s2-plugify/commit/2c85f31d4f34701a7853b25d2185072d65e62500))
+* disable malloc override ([712dfa8](https://github.com/untrustedmodders/s2-plugify/commit/712dfa8f4e67954f06b0ac815099097e30f37e08))
+* exports for macos ([c8d5f1a](https://github.com/untrustedmodders/s2-plugify/commit/c8d5f1a8439eeb49103cab8eb419f856d84472c0))
+* **GCC warnings:** update Source SDK module ([128c6db](https://github.com/untrustedmodders/s2-plugify/commit/128c6dbbec65427dd4667141fd16aec638f5cef1))
+* logger listener ([bb2249e](https://github.com/untrustedmodders/s2-plugify/commit/bb2249eb18e1c89447db3557b559a0043cfddbf5))
+* update arch tags for action build ([5fbd47a](https://github.com/untrustedmodders/s2-plugify/commit/5fbd47a000659ad080ce4cfb729fe8f4b6a4a312))
+* update sdk ([f27eafb](https://github.com/untrustedmodders/s2-plugify/commit/f27eafb5ecd08d2f659b2a3cadc33afd9ced030b))
+
 ## [1.0.17](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.16...v1.0.17) (2025-05-26)
 
 
