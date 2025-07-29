@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.20](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.19...v1.0.20) (2025-07-29)
+
+
+### Bug Fixes
+
+* update plugify & sdk ([01ea148](https://github.com/untrustedmodders/s2-plugify/commit/01ea14859b1cc0d856535257afb12b2719ec3391))
+* update readme and add missing permission ([69d5214](https://github.com/untrustedmodders/s2-plugify/commit/69d5214ff4a8085d5f5237a694fadac296d82c7a))
+* update sdk ([ee0286b](https://github.com/untrustedmodders/s2-plugify/commit/ee0286b7bbb55bc06c2b3cee133abc8a1ba4d2b2))
+
 ## [1.0.19](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.18...v1.0.19) (2025-06-26)
 
 
