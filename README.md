@@ -1,4 +1,4 @@
-[![Русский](https://img.shields.io/badge/Русский-%F0%9F%87%B7%F0%9F%87%BA-green?style=for-the-badge)](README.ru.md)
+[![Русский](https://img.shields.io/badge/Русский-%F0%9F%87%B7%F0%9F%87%BA-green?style=for-the-badge)](README_ru.md)
 # s2-plugify: Server Side Modding Framework for Source 2
 
 It is a cutting-edge server-side modding framework designed specifically for Counter-Strike 2 servers. This project takes modding to the next level by implementing a Plugify Plugin & Package Manager on top of a Metamod Source Plugin. This unique approach allows developers to create plugins that seamlessly interact with the game server, using Plugify language modules to enable the creation of maintainable and testable code.
