@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.21](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.20...v1.0.21) (2025-07-30)
+
+
+### Bug Fixes
+
+* add in readme ru translate ([cd1add5](https://github.com/untrustedmodders/s2-plugify/commit/cd1add5df0ee2bbbf98c651295df6ed05e297d95))
+* fix readme url ([144b622](https://github.com/untrustedmodders/s2-plugify/commit/144b622d6b68b1d3ab439b1554266bb561e53283))
+* update sdk ([e1253ce](https://github.com/untrustedmodders/s2-plugify/commit/e1253ce3b25ba5e07bd9a8894fff578816b16bf3))
+
 ## [1.0.20](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.19...v1.0.20) (2025-07-29)
 
 
