@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.22](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.21...v1.0.22) (2025-08-01)
+
+
+### Bug Fixes
+
+* add lua repo to config ([015eca0](https://github.com/untrustedmodders/s2-plugify/commit/015eca0eb127a30ea6f1e3b8f104c6796aa2d35c))
+* bump c++ to 23 ([bdf96cb](https://github.com/untrustedmodders/s2-plugify/commit/bdf96cb34657157288e6f0d31d607404b7b5c9a5))
+* replace GenerateCmdLine by plg::join ([0fad931](https://github.com/untrustedmodders/s2-plugify/commit/0fad931f11497efd2d2017c9bb8713b1b81aa68a))
+* update deps ([463badb](https://github.com/untrustedmodders/s2-plugify/commit/463badb51696748fba5545c274a34e29f0854613))
+
 ## [1.0.21](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.20...v1.0.21) (2025-07-30)
 
 
