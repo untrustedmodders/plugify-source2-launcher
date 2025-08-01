@@ -31,14 +31,6 @@
 #include <igamesystem.h>
 #include <tier0/logging.h>
 
-std::string GenerateCmdLine(int argc, char* argv[]) {
-	std::string cmdLine;
-	for (int i = 1; i < argc; ++i) {
-		std::format_to(std::back_inserter(cmdLine), "{} ", argv[i]);
-	}
-	return cmdLine;
-}
-
 using namespace plugify;
 
 class S2Logger final : public ILogger {
@@ -935,7 +927,7 @@ int main(int argc, char* argv[]) {
 	using Source2MainFn = int (*)(void* hInstance, void* hPrevInstance, const char* pszCmdLine, int nShowCmd, const char* pszBaseDir, const char* pszGame);
 	auto Source2Main = engine.GetFunctionByName("Source2Main").RCast<Source2MainFn>();
 
-	auto command_line = GenerateCmdLine(argc, argv);
+	auto command_line = argc > 1 ? plg::join(std::span(argv + 1, argc - 1), " ") : "";
 	int res = Source2Main(nullptr, nullptr, command_line.c_str(), 0, parent_path.c_str(), PLUGIFY_GAME_NAME);
 
 	if (s_listener) {
