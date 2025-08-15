@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.23](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.22...v1.0.23) (2025-08-15)
+
+
+### Bug Fixes
+
+* update sdk ([d178c55](https://github.com/untrustedmodders/s2-plugify/commit/d178c55d197126c6e16b43008db03cf2570ae891))
+
 ## [1.0.22](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.21...v1.0.22) (2025-08-01)
 
 
