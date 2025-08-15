@@ -107,8 +107,7 @@ namespace {
 	void Print(std::string& out, const T& t, F& f, std::string_view tab = "  ") {
 		out += tab;
 		if (t.GetState() != S::Loaded) {
-			std::format_to(std::back_inserter(out), "[{:02d}] <{}> {}", t.GetId(), f(t.GetState()),
-						   t.GetFriendlyName());
+			std::format_to(std::back_inserter(out), "[{:02d}] <{}> {}", t.GetId(), f(t.GetState()), t.GetFriendlyName());
 		} else {
 			std::format_to(std::back_inserter(out), "[{:02d}] {}", t.GetId(), t.GetFriendlyName());
 		}
@@ -355,11 +354,10 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 					std::format_to(std::back_inserter(sMessage), "  Language module: {}\n", descriptor.GetLanguageModule());
 					sMessage += "  Dependencies: \n";
 					for (const auto& reference: descriptor.GetDependencies()) {
-						auto dependency = pluginManager->FindPlugin(reference.GetName());
-						if (dependency) {
+						if (auto dependency = pluginManager->FindPlugin(reference.GetName())) {
 							Print<plugify::PluginState>(sMessage, dependency, plugify::PluginUtils::ToString, "    ");
 						} else {
-							std::format_to(std::back_inserter(sMessage), "    {} <Missing> (v{})", reference.GetName(), reference.GetRequestedVersion().has_value() ? reference.GetRequestedVersion()->to_string() : "[latest]");
+							std::format_to(std::back_inserter(sMessage), "    {} <Missing> (v{})", reference.GetName(), reference.GetVersion().has_value() ? reference.GetVersion()->to_string() : "[latest]");
 						}
 					}
 					std::format_to(std::back_inserter(sMessage), "  File: {}\n\n", descriptor.GetEntryPoint());
