@@ -897,8 +897,35 @@ bool InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesyst
 		attachments);
 }
 
+std::optional<std::filesystem::path> ExecutablePath()
+{
+	std::string execPath(255, '\0');
+
+	while (true) {
+#if _WIN32
+		size_t len = GetModuleFileNameA(nullptr, execPath.data(), static_cast<DWORD>(execPath.length()));
+		if (len == 0) {
+#elif __unix
+		ssize_t len = readlink("/proc/self/exe", execPath.data(), execPath.length());
+		if (len == -1) {
+#endif
+			return std::nullopt;
+		}
+
+		if (len < execPath.length()) {
+			break;
+		}
+		else {
+			execPath.resize(execPath.length() * 2);
+		}
+	}
+
+	return std::filesystem::path(execPath).parent_path();
+}
+
 int main(int argc, char* argv[]) {
-	auto binary_path = std::filesystem::current_path();
+	auto binary_path = ExecutablePath().value_or(std::filesystem::current_path());
+
 	if (is_directory(binary_path) && binary_path.filename() == "game") {
 		binary_path /= "bin/" PLUGIFY_BINARY;
 	}
