@@ -4,6 +4,8 @@
 
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 
+set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 if(POLICY CMP0092)
     cmake_policy(SET CMP0092 NEW) # Don't add -W3 warning level by default.
 endif()
@@ -28,7 +30,8 @@ project(s2-plugify
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+#set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 if(NOT CMAKE_BUILD_TYPE MATCHES "Debug|Devel|MinSizeRel|RelWithDebInfo|Release")
     message(STATUS "CMAKE_BUILD_TYPE not set, defaulting to Debug.")
@@ -39,15 +42,16 @@ if(UNIX AND NOT APPLE)
     set(LINUX TRUE)
 endif()
 
+set(BUILD_SHARED_LIBS ON CACHE INTERNAL "")
+
 #
 # Plugify
 #
 set(PLUGIFY_BUILD_SHARED_LIB ON CACHE INTERNAL "")
-set(PLUGIFY_BUILD_ASSEMBLY ON CACHE INTERNAL "")
-set(PLUGIFY_BUILD_CRASHPAD ON CACHE INTERNAL "")
 set(PLUGIFY_BUILD_TESTS OFF CACHE INTERNAL "")
 if(LINUX)
     set(PLUGIFY_USE_STATIC_STDLIB ON CACHE INTERNAL "")
+    set(PLUGIFY_USE_ABI0 OFF CACHE INTERNAL "")
 endif()
 add_subdirectory(external/plugify)
 
@@ -59,21 +63,32 @@ set(SOURCESDK_LINK_STEAMWORKS OFF CACHE INTERNAL "")
 set(SOURCESDK_MALLOC_OVERRIDE OFF CACHE INTERNAL "")
 set(SOURCESDK_COMPILE_PROTOBUF OFF CACHE INTERNAL "")
 set(SOURCESDK_CONFIGURE_EXPORT_MAP OFF CACHE INTERNAL "")
-
+set(SOURCESDK_USE_ABI0 OFF CACHE INTERNAL "")
 add_subdirectory(external/sourcesdk)
 
 #
-# CPP Language Module for Plugify
+# Dynlibutils
+#
+add_subdirectory(external/dynlibutils)
+
+#
+# S2 Plugify
 #
 file(GLOB_RECURSE PLUGIFY_SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "src/*.cpp")
 
 add_executable(${PROJECT_NAME} ${PLUGIFY_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE external/sourcesdk/public)
 
-set(PLUGIFY_LINK_LIBRARIES plugify::plugify plugify::plugify-assembly glaze::glaze crashpad_client sourcesdk::sourcesdk)
+#
+# Dependencies
+#
+include(FetchCrashPad)
+include(FetchCLI)
+
+set(PLUGIFY_LINK_LIBRARIES plugify::plugify glaze::glaze crashpad_client cpp-memory_utils CLI11 sourcesdk::sourcesdk)
 
 if(NOT COMPILER_SUPPORTS_FORMAT)
-    set(PLUGIFY_LINK_LIBRARIES ${PLUGIFY_LINK_LIBRARIES} fmt::fmt-header-only)
+    #set(PLUGIFY_LINK_LIBRARIES ${PLUGIFY_LINK_LIBRARIES} fmt::fmt-header-only)
 endif()
 
 if(LINUX)

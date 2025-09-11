@@ -1,22 +1,32 @@
 {
-    "$schema": "https://raw.githubusercontent.com/untrustedmodders/plugify/refs/heads/main/schemas/config.schema.json",
-    "baseDir": "addons/plugify",
-    "configsDir": "configs",
-    "dataDir": "data",
-    "logsDir": "logs",
-    "logSeverity": "debug",
-    "repositories": [
-        "https://untrustedmodders.github.io/plugify-module-cpp/plugify-module-cpp.json",
-        "https://untrustedmodders.github.io/plugify-module-dotnet/plugify-module-dotnet.json",
-        "https://untrustedmodders.github.io/plugify-module-python3.12/plugify-module-python3.12.json",
-        "https://untrustedmodders.github.io/plugify-module-v8/plugify-module-v8.json",
-        "https://untrustedmodders.github.io/plugify-module-golang/plugify-module-golang.json",
-        "https://untrustedmodders.github.io/plugify-module-lua/plugify-module-lua.json",
-        "https://untrustedmodders.github.io/polyhook/polyhook.json",
-        "https://untrustedmodders.github.io/dynhook/dynhook.json",
-        "https://untrustedmodders.github.io/dyncall/dyncall.json",
-        "https://untrustedmodders.github.io/plugify-source-2/s2sdk.json",
-        "https://plugify.net/plugify-configs/plugify-configs.json"
-    ],
-    "preferOwnSymbols": ${PLUGIFY_PREFER_OWN_SYMBOLS}
+    "paths": {
+        "baseDir": "addons/plugify",
+        "extensionsDir": "extensions",
+        "configsDir": "configs",
+        "dataDir": "data",
+        "logsDir": "logs",
+        "cacheDir": "cache"
+    },
+    "loading": {
+        "preferOwnSymbols": ${PLUGIFY_PREFER_OWN_SYMBOLS},
+        "maxConcurrentLoads": 4,
+        "loadTimeout": 50000,
+        "exportTimeout": 10000,
+        "startTimeout": 25000
+    },
+    "runtime": {
+        "updateInterval": 0
+    },
+    "security": {
+        "whitelistedExtensions": [],
+        "blacklistedExtensions": []
+    },
+    "logging": {
+        "severity": "error",
+        "printReport": false,
+        "printLoadOrder": false,
+        "printDependencyGraph": false,
+        "printDigraphDot": false,
+        "exportDigraphDot": ""
+    }
 }

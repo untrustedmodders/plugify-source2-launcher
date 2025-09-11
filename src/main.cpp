@@ -118,53 +118,90 @@ public:
         Color color;
     };
 
-    static std::vector<TextSegment> ParseAnsiString(const std::string& input) {
-    	std::vector<TextSegment> segments;
-    	Color currentColor = S2Colors::WHITE;
+	// Use bit flags to quickly check if a byte is a color code
+    static constexpr bool isColorCode[256] = {
+        false, true,  true,  true,  true,  true,  true,  false, // 0x00-0x07
+        false, false, false, false, false, false, true,  true,  // 0x08-0x0F
+        true,  true,  true,  true,  true,  true,  true,  false, // 0x10-0x17
+        // ... rest are false
+    };
 
-    	size_t textStart = 0;
+    static inline Color colorMap[256] = {
+        S2Colors::WHITE,     // 0x00 (unused)
+        S2Colors::WHITE,     // 0x01 RESET
+        S2Colors::RED,       // 0x02
+        S2Colors::GREEN,     // 0x03
+        S2Colors::YELLOW,    // 0x04
+        S2Colors::BLUE,      // 0x05
+        S2Colors::MAGENTA,   // 0x06
+        S2Colors::WHITE,     // 0x07 (skip - BEL)
+        S2Colors::WHITE,     // 0x08 (skip)
+        S2Colors::WHITE,     // 0x09 (skip - TAB)
+        S2Colors::WHITE,     // 0x0A (skip - LF)
+        S2Colors::WHITE,     // 0x0B (skip - VT)
+        S2Colors::WHITE,     // 0x0C (skip - FF)
+        S2Colors::WHITE,     // 0x0D (skip - CR)
+        S2Colors::CYAN,      // 0x0E
+        S2Colors::GRAY,      // 0x0F
+        S2Colors::BRIGHT_RED,    // 0x10
+        S2Colors::BRIGHT_GREEN,  // 0x11
+        S2Colors::BRIGHT_YELLOW, // 0x12
+        S2Colors::BRIGHT_BLUE,   // 0x13
+        S2Colors::BRIGHT_MAGENTA,// 0x14
+        S2Colors::BRIGHT_CYAN,   // 0x15
+        S2Colors::BRIGHT_GRAY,   // 0x16
+        // ... etc
+    };
 
-    	for (size_t i = 0; i < input.length(); ++i) {
-    		if (input[i] >= Colors::RESET && input[i] <= Colors::BRIGHT_YELLOW) {
-    			// Found color code
-    			if (i > textStart) {
-    				segments.emplace_back(
+	static std::vector<TextSegment> Parse(const std::string& input) {
+		std::vector<TextSegment> segments;
+		segments.reserve(3); // Typical estimate
+
+		Color currentColor = S2Colors::WHITE;
+		size_t textStart = 0;
+
+		for (size_t i = 0; i < input.length(); ++i) {
+			unsigned char byte = static_cast<unsigned char>(input[i]);
+
+			if (byte < 32 && isColorCode[byte]) {
+				// Found color code
+				if (i > textStart) {
+					segments.emplace_back(
 						input.substr(textStart, i - textStart),
 						currentColor
 					);
-    			}
+				}
 
-    			// Update color using direct array lookup
-    			static const Color colorTable[] = {
-    				S2Colors::WHITE,         // 0x00 (unused)
-					S2Colors::WHITE,         // 0x01 RESET
-					S2Colors::RED,           // 0x02
-					S2Colors::GREEN,         // 0x03
-					S2Colors::YELLOW,        // 0x04
-					S2Colors::BLUE,          // 0x05
-					S2Colors::MAGENTA,       // 0x06
-					S2Colors::CYAN,          // 0x07
-					S2Colors::GRAY,          // 0x08
-					S2Colors::BRIGHT_RED,    // 0x09
-					S2Colors::BRIGHT_GREEN,  // 0x0A
-					S2Colors::BRIGHT_YELLOW  // 0x0B
-				};
+				currentColor = colorMap[byte];
+				textStart = i + 1;
+			}
+		}
 
-    			currentColor = colorTable[input[i]];
-    			textStart = i + 1;
-    		}
-    	}
-
-    	// Add remaining text
-    	if (textStart < input.length()) {
-    		segments.emplace_back(
+		// Add remaining text
+		if (textStart < input.length()) {
+			segments.emplace_back(
 				input.substr(textStart),
 				currentColor
 			);
-    	}
+		}
 
-    	return segments;
-    }
+		return segments;
+	}
+
+	// Helper to strip color codes for display/logging
+	static std::string StripColors(std::string_view input) {
+		std::string result;
+		result.reserve(input.length());
+
+		for (char c : input) {
+			unsigned char byte = static_cast<unsigned char>(c);
+			if (byte >= 32 || !isColorCode[byte]) {
+				result += c;
+			}
+		}
+
+		return result;
+	}
 };
 
 class S2Logger final : public ILogger {
@@ -182,7 +219,7 @@ public:
 	}
 
 	void Log(const std::string& message, LoggingSeverity_t severity) const {
-		auto segments = AnsiColorParser::ParseAnsiString(message);
+		auto segments = AnsiColorParser::Parse(message);
 
 		std::scoped_lock<std::mutex> lock(m_mutex);
 
@@ -233,7 +270,7 @@ public:
 	void Flush() override {}
 
 protected:
-	std::string FormatMessage(std::string_view message, Severity severity,
+	static std::string FormatMessage(std::string_view message, Severity severity,
 							  const std::source_location& loc) {
 		using namespace std::chrono;
 
@@ -269,13 +306,6 @@ std::shared_ptr<S2Logger> s_logger;
 std::shared_ptr<Plugify> s_context;
 std::unique_ptr<ILoggingListener> s_listener;
 PlugifyState s_state;
-
-// Logging macros with color support
-#define PLG_LOG(msg, color) s_logger->Log(msg, LS_MESSAGE, color)
-#define PLG_ERROR(msg) s_logger->Log(msg, LS_WARNING, S2Colors::RED)
-#define PLG_WARN(msg) s_logger->Log(msg, LS_WARNING, S2Colors::YELLOW)
-#define PLG_INFO(msg) s_logger->Log(msg, LS_MESSAGE, S2Colors::WHITE)
-#define PLG_SUCCESS(msg) s_logger->Log(msg, LS_MESSAGE, S2Colors::GREEN)
 
 namespace plg {
 	template<detail::is_string_like First>
@@ -499,10 +529,10 @@ namespace {
 		UniqueId::Value result;
 		auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), result);
 		if (ec != std::errc{}) {
-			PLG_ERROR(std::format("Error: {}", std::make_error_code(ec).message()).c_str());
+			plg::print("{}: {}", Colorize("Error", Colors::RED), std::make_error_code(ec).message());
 			return {};
 		} else if (ptr != str.data() + str.size()) {
-			PLG_ERROR("Invalid argument: trailing characters after the valid part");
+			plg::print("{}: Invalid argument: trailing characters after the valid part", Colorize("Error", Colors::RED));
 			return {};
 		}
 		return UniqueId{result};
@@ -562,6 +592,62 @@ namespace {
 		}
 
 		return true;
+	}
+
+	// Filter extensions based on criteria
+	std::vector<const Extension*> FilterExtensions(const std::vector<const Extension*>& extensions, const FilterOptions& filter) {
+		std::vector<const Extension*> result;
+
+		for (const auto& ext : extensions) {
+			if (!MatchesFilter(ext, filter)) {
+				continue;
+			}
+			result.push_back(ext);
+		}
+
+		return result;
+	}
+
+	// Sort extensions
+	void SortExtensions(std::vector<const Extension*>& extensions, SortBy sortBy, bool reverse = false) {
+		std::sort(extensions.begin(), extensions.end(), [sortBy, reverse](const Extension* a, const Extension* b) {
+			bool result = false;
+			switch (sortBy) {
+				case SortBy::Name:
+					result = a->GetName() < b->GetName();
+					break;
+				case SortBy::Version:
+					result = a->GetVersion() < b->GetVersion();
+					break;
+				case SortBy::State:
+					result = a->GetState() < b->GetState();
+					break;
+				case SortBy::Language:
+					result = a->GetLanguage() < b->GetLanguage();
+					break;
+				case SortBy::LoadTime:
+					result = a->GetOperationTime(ExtensionState::Loaded)
+							 < b->GetOperationTime(ExtensionState::Loaded);
+					break;
+			}
+			return reverse ? !result : result;
+		});
+	}
+
+	void ShowVersion() {
+		static std::string copyright = std::format(
+			"Copyright (C) 2023-{}{}{}{} Untrusted Modders Team",
+			__DATE__[7],
+			__DATE__[8],
+			__DATE__[9],
+			__DATE__[10]
+		);
+		plg::print(R"(      ____)");
+		plg::print(R"( ____|    \         Plugify )" + s_context->GetVersion().to_string());
+		plg::print(R"((____|     `._____  )" + copyright);
+		plg::print(R"( ____|       _|___)");
+		plg::print(R"((____|     .'       This program may be freely redistributed under)");
+		plg::print(R"(     |____/         the terms of the MIT License.)");
 	}
 
 	// Print dependency tree
@@ -825,41 +911,14 @@ namespace {
 
     void ListPlugins(
 		const std::vector<const Extension*>& plugins,
+		bool showDetails = false,
         const FilterOptions& filter = {},
         SortBy sortBy = SortBy::Name,
         bool reverseSort = false
     ) {
-        // Apply filters
-        std::vector<const Extension*> filtered;
-        for (const auto& plugin : plugins) {
-            if (MatchesFilter(plugin, filter)) {
-                filtered.push_back(plugin);
-            }
-        }
-
-        // Sort
-        std::ranges::sort(filtered, [sortBy, reverseSort](const Extension* a, const Extension* b) {
-            bool result = false;
-            switch (sortBy) {
-                case SortBy::Name:
-                    result = a->GetName() < b->GetName();
-                    break;
-                case SortBy::Version:
-                    result = a->GetVersion() < b->GetVersion();
-                    break;
-                case SortBy::State:
-                    result = a->GetState() < b->GetState();
-                    break;
-                case SortBy::Language:
-                    result = a->GetLanguage() < b->GetLanguage();
-                    break;
-                case SortBy::LoadTime:
-                    result = a->GetOperationTime(ExtensionState::Loaded)
-                             < b->GetOperationTime(ExtensionState::Loaded);
-                    break;
-            }
-            return reverseSort ? !result : result;
-        });
+    	// Apply filters
+    	auto filtered = FilterExtensions(plugins, filter);
+    	SortExtensions(filtered, sortBy, reverseSort);
 
         auto count = filtered.size();
         if (!count) {
@@ -913,16 +972,18 @@ namespace {
             );
 
             // Show errors/warnings if any
-            if (plugin->HasErrors()) {
-                for (const auto& error : plugin->GetErrors()) {
-                    plg::print("     └─ {}: {}", Colorize("Error", Colors::RED), error);
-                }
-            }
-            if (plugin->HasWarnings()) {
-                for (const auto& warning : plugin->GetWarnings()) {
-                    plg::print("     └─ {}: {}", Colorize("Warning", Colors::YELLOW), warning);
-                }
-            }
+        	if (showDetails) {
+        		if (plugin->HasErrors()) {
+        			for (const auto& error : plugin->GetErrors()) {
+        				plg::print("     └─ {}: {}", Colorize("Error", Colors::RED), error);
+        			}
+        		}
+        		if (plugin->HasWarnings()) {
+        			for (const auto& warning : plugin->GetWarnings()) {
+        				plg::print("     └─ {}: {}", Colorize("Warning", Colors::YELLOW), warning);
+        			}
+        		}
+        	}
         }
         plg::print(std::string(80, '-'));
 
@@ -941,41 +1002,14 @@ namespace {
 
     void ListModules(
 		const std::vector<const Extension*>& modules,
+		bool showDetails = false,
         const FilterOptions& filter = {},
         SortBy sortBy = SortBy::Name,
         bool reverseSort = false
     ) {
-        // Apply filters
-        std::vector<const Extension*> filtered;
-        for (const auto& module : modules) {
-            if (MatchesFilter(module, filter)) {
-                filtered.push_back(module);
-            }
-        }
-
-        // Sort
-        std::ranges::sort(filtered, [sortBy, reverseSort](const Extension* a, const Extension* b) {
-            bool result = false;
-            switch (sortBy) {
-                case SortBy::Name:
-                    result = a->GetName() < b->GetName();
-                    break;
-                case SortBy::Version:
-                    result = a->GetVersion() < b->GetVersion();
-                    break;
-                case SortBy::State:
-                    result = a->GetState() < b->GetState();
-                    break;
-                case SortBy::Language:
-                    result = a->GetLanguage() < b->GetLanguage();
-                    break;
-                case SortBy::LoadTime:
-                    result = a->GetOperationTime(ExtensionState::Loaded)
-                             < b->GetOperationTime(ExtensionState::Loaded);
-                    break;
-            }
-            return reverseSort ? !result : result;
-        });
+    	// Apply filters
+    	auto filtered = FilterExtensions(modules, filter);
+    	SortExtensions(filtered, sortBy, reverseSort);
 
         auto count = filtered.size();
         if (!count) {
@@ -1029,16 +1063,18 @@ namespace {
             );
 
             // Show errors/warnings if any
-            if (module->HasErrors()) {
-                for (const auto& error : module->GetErrors()) {
-                    plg::print("     └─ {}: {}", Colorize("Error", Colors::RED), error);
-                }
-            }
-            if (module->HasWarnings()) {
-                for (const auto& warning : module->GetWarnings()) {
-                    plg::print("     └─ {}: {}", Colorize("Warning", Colors::YELLOW), warning);
-                }
-            }
+        	if (showDetails) {
+        		if (module->HasErrors()) {
+        			for (const auto& error : module->GetErrors()) {
+        				plg::print("     └─ {}: {}", Colorize("Error", Colors::RED), error);
+        			}
+        		}
+        		if (module->HasWarnings()) {
+        			for (const auto& warning : module->GetWarnings()) {
+        				plg::print("     └─ {}: {}", Colorize("Warning", Colors::YELLOW), warning);
+        			}
+        		}
+        	}
         }
         plg::print(std::string(80, '-'));
 
@@ -1912,21 +1948,19 @@ namespace {
 // Main command handler using CLI11
 CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	if (!s_context) {
-		PLG_ERROR("Plugify context not initialized!");
+		plg::print("{}: Plugify context not initialized!", Colorize("Error", Colors::RED));
 		return;
-	}
-
-	// Convert args to vector for CLI11
-	std::vector<std::string> arguments;
-	arguments.reserve(args.ArgC());
-	for (int i = 0; i < args.ArgC(); i++) {
-		arguments.push_back(args[i]);
 	}
 
 	// Create CLI app
 	CLI::App app{"Plugify Plugin Management System"};
-	app.allow_extras();
-	app.prefix_command();
+	app.require_subcommand(); // 1 or more
+	//app.allow_extras();
+	//app.prefix_command();
+	app.set_version_flag("-v,--version", [&app]() {
+		ShowVersion();
+		return "";
+	});
 
 	// Subcommands
 	auto* help_cmd = app.add_subcommand("help", "Show help");
@@ -1950,21 +1984,12 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	bool pluginReverse = false;
 	bool pluginShowFailed = false;
 
-	plugins_cmd->add_option(
-		"--filter-state",
-		pluginFilterState,
-		"Filter by state (comma-separated: loaded,failed,disabled)"
-	);
-	plugins_cmd->add_option(
-		"--filter-lang",
-		pluginFilterLang,
-		"Filter by language (comma-separated: cpp,python,rust)"
-	);
-	plugins_cmd
-		->add_option("--sort", pluginSortBy, "Sort by: name, version, state, language, loadtime")
+	plugins_cmd->add_option("--filter-state", pluginFilterState, "Filter by state (comma-separated: loaded,failed,disabled)");
+	plugins_cmd->add_option("--filter-lang", pluginFilterLang, "Filter by language (comma-separated: cpp,python,rust)");
+	plugins_cmd->add_option("-s,--sort", pluginSortBy, "Sort by: name, version, state, language, loadtime")
 		->check(CLI::IsMember({ "name", "version", "state", "language", "loadtime" }));
-	plugins_cmd->add_flag("--reverse,-r", pluginReverse, "Reverse sort order");
-	plugins_cmd->add_flag("--failed", pluginShowFailed, "Show only failed plugins");
+	plugins_cmd->add_flag("-r,--reverse,", pluginReverse, "Reverse sort order");
+	plugins_cmd->add_flag("-f,--failed", pluginShowFailed, "Show only failed plugins");
 
 	// Options for modules commands
 	std::string moduleFilterState;
@@ -1973,13 +1998,12 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	bool moduleReverse = false;
 	bool moduleShowFailed = false;
 
-	modules_cmd->add_option("--filter-state", moduleFilterState, "Filter by state (comma-separated)");
-	modules_cmd->add_option("--filter-lang", moduleFilterLang, "Filter by language (comma-separated)");
-	modules_cmd
-		->add_option("--sort", moduleSortBy, "Sort by: name, version, state, language, loadtime")
+	modules_cmd->add_option("--filter-state", moduleFilterState, "Filter by state (comma-separated: loaded,failed,disabled)");
+	modules_cmd->add_option("--filter-lang", moduleFilterLang, "Filter by language (comma-separated: cpp,python,rust)");
+	modules_cmd->add_option("-s,--sort", moduleSortBy, "Sort by: name, version, state, language, loadtime")
 		->check(CLI::IsMember({ "name", "version", "state", "language", "loadtime" }));
-	modules_cmd->add_flag("--reverse,-r", moduleReverse, "Reverse sort order");
-	modules_cmd->add_flag("--failed", moduleShowFailed, "Show only failed modules");
+	modules_cmd->add_flag("-r,--reverse", moduleReverse, "Reverse sort order");
+	modules_cmd->add_flag("-f,--failed", moduleShowFailed, "Show only failed modules");
 
 	// Helper function to parse comma-separated values
     auto parseCsv = [](const std::string& str) -> std::vector<std::string> {
@@ -2051,61 +2075,61 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
 	plugin_cmd->add_option("name", plugin_name, "Plugin name or ID")->required();
 	plugin_cmd->add_flag("-u,--uuid", use_id, "Use ID instead of name");
+	plugin_cmd->validate_positionals();
 
 	module_cmd->add_option("name", module_name, "Module name or ID")->required();
 	module_cmd->add_flag("-u,--uuid", use_id, "Use ID instead of name");
+	module_cmd->validate_positionals();
 
 	plugins_cmd->add_flag("-d,--details", show_details, "Show detailed information");
 	modules_cmd->add_flag("-d,--details", show_details, "Show detailed information");
 
 	tree_cmd->add_option("name", tree_name, "Extension name or ID")->required();
 	tree_cmd->add_flag("-u,--uuid", use_id, "Use ID instead of name");
+	tree_cmd->validate_positionals();
 
 	search_cmd->add_option("query", search_query, "Search query")->required();
+	search_cmd->validate_positionals();
 
-	compare_cmd->add_option("extension1", compare_ext1, "First extension")->required();
-	compare_cmd->add_option("extension2", compare_ext2, "Second extension")->required();
+	compare_cmd->add_option("e1", compare_ext1, "First extension")->required();
+	compare_cmd->add_option("e2", compare_ext2, "Second extension")->required();
 	compare_cmd->add_flag("-u,--uuid", use_id, "Use ID instead of name");
+	compare_cmd->validate_positionals();
 
 	// Command callbacks
 	help_cmd->callback([]() {
-		PLG_INFO("Plugify Menu");
-		PLG_INFO("(c) untrustedmodders");
-		PLG_INFO("https://github.com/untrustedmodders");
-		PLG_INFO("usage: plugify <command> [options] [arguments]");
-		PLG_INFO("  help           - Show help");
-		PLG_INFO("  version        - Version information");
-		PLG_INFO("Plugin Manager commands:");
-		PLG_INFO("  load           - Load plugin manager");
-		PLG_INFO("  unload         - Unload plugin manager");
-		PLG_INFO("  reload         - Reload plugin manager");
-		PLG_INFO("  modules        - List running modules");
-		PLG_INFO("  plugins        - List running plugins");
-		PLG_INFO("  plugin <name>  - Show information about a plugin");
-		PLG_INFO("  module <name>  - Show information about a module");
-		PLG_INFO("  health         - System health check");
-		PLG_INFO("  tree <name>    - Show dependency tree");
-		PLG_INFO("  search <query> - Search extensions");
-		PLG_INFO("  compare <e1> <e2> - Compare two extensions");
-		PLG_INFO("Options:");
-		PLG_INFO("  -h, --help     - Show help");
-		PLG_INFO("  -u, --uuid     - Use ID instead of name");
-		PLG_INFO("  -d, --details  - Show detailed information");
+		plg::print(Colorize("Plugify Menu", Colors::BOLD));
+		plg::print("(c) untrustedmodders");
+		plg::print(Colorize("https://github.com/untrustedmodders", Colors::CYAN));
+		plg::print("usage: plugify <command> [options] [arguments]");
+		plg::print("  help           - Show help");
+		plg::print("  version        - Version information");
+		plg::print("Plugin Manager commands:");
+		plg::print("  load           - Load plugin manager");
+		plg::print("  unload         - Unload plugin manager");
+		plg::print("  reload         - Reload plugin manager");
+		plg::print("  modules        - List running modules");
+		plg::print("  plugins        - List running plugins");
+		plg::print("  plugin <name>  - Show information about a plugin");
+		plg::print("  module <name>  - Show information about a module");
+		plg::print("  health         - System health check");
+		plg::print("  tree <name>    - Show dependency tree");
+		plg::print("  search <query> - Search extensions");
+		plg::print("  compare <e1> <e2> - Compare two extensions");
+		plg::print("Options:");
+		plg::print("  -h, --help     - Show help");
+		plg::print("  -u, --uuid     - Use ID instead of name");
+		plg::print("  -d, --details  - Show detailed information");
 	});
 
 	version_cmd->callback([&]() {
-		PLG_INFO(R"(      ____)");
-		PLG_INFO(R"( ____|    \         Plugify )" PLUGIFY_PROJECT_VERSION);
-		PLG_INFO(R"((____|     `._____  Copyright (C) 2023-)" PLUGIFY_PROJECT_YEAR " Untrusted Modders Team");
-		PLG_INFO(R"( ____|       _|___)");
-		PLG_INFO(R"((____|     .'       This program may be freely redistributed under)");
-		PLG_INFO(R"(     |____/         the terms of the MIT License.)");
+		ShowVersion();
 	});
 
 	load_cmd->callback([&]() {
 		auto& manager = s_context->GetManager();
 		if (manager.IsInitialized()) {
-			PLG_ERROR("Plugin manager already loaded.");
+			plg::print("Plugin manager already loaded.");
 		} else {
 			s_state = PlugifyState::Load;
 		}
@@ -2114,7 +2138,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	unload_cmd->callback([&]() {
 		auto& manager = s_context->GetManager();
 		if (!manager.IsInitialized()) {
-			PLG_ERROR("Plugin manager already unloaded.");
+			plg::print("Plugin manager already unloaded.");
 		} else {
 			s_state = PlugifyState::Unload;
 		}
@@ -2123,7 +2147,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	reload_cmd->callback([&]() {
 		auto& manager = s_context->GetManager();
 		if (!manager.IsInitialized()) {
-			PLG_ERROR("Plugin manager not loaded.");
+			plg::print("Plugin manager not loaded.");
 		} else {
 			s_state = PlugifyState::Reload;
 		}
@@ -2144,7 +2168,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	plugins_cmd->callback([&]() {
 		auto& manager = s_context->GetManager();
 		if (!manager.IsInitialized()) {
-			PLG_ERROR("You must load plugin manager before querying any information from it.");
+			plg::print("{}: You must load plugin manager before querying any information from it.", Colorize("Error", Colors::RED));
 			return;
 		}
 
@@ -2158,7 +2182,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 		filter.showOnlyFailed = pluginShowFailed;
 
 		auto plugins = manager.GetExtensionsByType(ExtensionType::Plugin);
-		ListPlugins(plugins, filter, parseSortBy(pluginSortBy), pluginReverse);
+		ListPlugins(plugins, show_details, filter, parseSortBy(pluginSortBy), pluginReverse);
 	});
 #endif
 
@@ -2177,7 +2201,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	modules_cmd->callback([&]() {
 		auto& manager = s_context->GetManager();
 		if (!manager.IsInitialized()) {
-			PLG_ERROR("You must load plugin manager before querying any information from it.");
+			plg::print("{}: You must load plugin manager before querying any information from it.", Colorize("Error", Colors::RED));
 			return;
 		}
 
@@ -2191,25 +2215,29 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 		filter.showOnlyFailed = moduleShowFailed;
 
 		auto modules = manager.GetExtensionsByType(ExtensionType::Module);
-		ListModules(modules, filter, parseSortBy(moduleSortBy), moduleReverse);
+		ListModules(modules, show_details, filter, parseSortBy(moduleSortBy), moduleReverse);
 	});
 #endif
 	plugin_cmd->callback([&]() {
 		auto& manager = s_context->GetManager();
 		if (!manager.IsInitialized()) {
-			PLG_ERROR("You must load plugin manager before querying any information from it.");
+			plg::print("{}: You must load plugin manager before querying any information from it.", Colorize("Error", Colors::RED));
 			return;
 		}
 
 		auto plugin = use_id ? manager.FindExtension(FormatId(plugin_name)) :
 							   manager.FindExtension(plugin_name);
 		if (!plugin) {
-			PLG_ERROR(std::format("Plugin {} not found.", plugin_name).c_str());
+			plg::print("{}: Plugin {} not found.", Colorize("Error", Colors::RED), plugin_name);
 			return;
 		}
 
 		if (!plugin->IsPlugin()) {
-			PLG_ERROR(std::format("'{}' is not a plugin (it's a module).", plugin_name).c_str());
+			plg::print(
+			   "{}: '{}' is not a plugin (it's a module).",
+			   Colorize("Error", Colors::RED),
+			   plugin_name
+		   );
 			return;
 		}
 
@@ -2223,19 +2251,23 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	module_cmd->callback([&]() {
 		auto& manager = s_context->GetManager();
 		if (!manager.IsInitialized()) {
-			PLG_ERROR("You must load plugin manager before querying any information from it.");
+			plg::print("{}: You must load plugin manager before querying any information from it.", Colorize("Error", Colors::RED));
 			return;
 		}
 
 		auto module = use_id ? manager.FindExtension(FormatId(module_name)) :
 							   manager.FindExtension(module_name);
 		if (!module) {
-			PLG_ERROR(std::format("Module {} not found.", module_name).c_str());
+			plg::print("{}: Module {} not found.", Colorize("Error", Colors::RED), module_name);
 			return;
 		}
 
 		if (!module->IsModule()) {
-			PLG_ERROR(std::format("'{}' is not a module (it's a plugin).", module_name).c_str());
+			plg::print(
+				"{}: '{}' is not a module (it's a plugin).",
+				Colorize("Error", Colors::RED),
+				module_name
+			);
 			return;
 		}
 
@@ -2249,7 +2281,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	health_cmd->callback([&]() {
 		auto& manager = s_context->GetManager();
 		if (!manager.IsInitialized()) {
-			PLG_ERROR("You must load plugin manager before querying any information from it.");
+			plg::print("{}: You must load plugin manager before querying any information from it.", Colorize("Error", Colors::RED));
 			return;
 		}
 
@@ -2326,14 +2358,14 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	tree_cmd->callback([&]() {
 		auto& manager = s_context->GetManager();
 		if (!manager.IsInitialized()) {
-			PLG_ERROR("You must load plugin manager before querying any information from it.");
+			plg::print("{}: You must load plugin manager before querying any information from it.", Colorize("Error", Colors::RED));
 			return;
 		}
 
 		auto ext = use_id ? manager.FindExtension(FormatId(tree_name)) :
 						   manager.FindExtension(tree_name);
 		if (!ext) {
-			PLG_ERROR(std::format("Extension {} not found.", tree_name).c_str());
+			plg::print("{}: Extension {} not found.", Colorize("Error", Colors::RED), tree_name);
 			return;
 		}
 #if 0
@@ -2372,7 +2404,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	search_cmd->callback([&]() {
 		auto& manager = s_context->GetManager();
 		if (!manager.IsInitialized()) {
-			PLG_ERROR("You must load plugin manager before querying any information from it.");
+			plg::print("{}: You must load plugin manager before querying any information from it.", Colorize("Error", Colors::RED));
 			return;
 		}
 
@@ -2382,7 +2414,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	compare_cmd->callback([&]() {
 		auto& manager = s_context->GetManager();
 		if (!manager.IsInitialized()) {
-			PLG_ERROR("You must load plugin manager before querying any information from it.");
+			plg::print("{}: You must load plugin manager before querying any information from it.", Colorize("Error", Colors::RED));
 			return;
 		}
 
@@ -2392,11 +2424,11 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 						    manager.FindExtension(compare_ext2);
 
 		if (!ext1) {
-			PLG_ERROR(std::format("Extension {} not found.", compare_ext1).c_str());
+			plg::print("{}: Extension {} not found.", Colorize("Error", Colors::RED), compare_ext1);
 			return;
 		}
 		if (!ext2) {
-			PLG_ERROR(std::format("Extension {} not found.", compare_ext2).c_str());
+			plg::print("{}: Extension {} not found.", Colorize("Error", Colors::RED), compare_ext2);
 			return;
 		}
 
@@ -2405,14 +2437,12 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
 	// Parse arguments
 	try {
-		app.parse(arguments);
+		app.parse(args.ArgC(), args.ArgV());
 	} catch (const CLI::ParseError& e) {
 		if (e.get_exit_code() != 0) {
-			if (arguments.size() > 1) {
-				PLG_ERROR(std::format("Unknown option: {}", arguments[1]).c_str());
-			}
-			PLG_ERROR("usage: plugify <command> [options] [arguments]");
-			PLG_ERROR("Try 'plugify help' for more information.");
+			plg::print("{}: {}", Colorize("Error", Colors::RED), e.what());
+			plg::print("usage: plugify <command> [options] [arguments]");
+			plg::print("Type '{}' for available commands.", Colorize("plugify help", Colors::BRIGHT_RED));
 		}
 	}
 }
@@ -2432,25 +2462,25 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 		case PlugifyState::Load: {
 			auto& manager = s_context->GetManager();
 			if (auto initResult = manager.Initialize()) {
-				PLG_SUCCESS("Plugin manager was loaded.");
+				plg::print("Plugin manager was loaded.");
 			} else {
-				PLG_ERROR(initResult.error().c_str());
+				plg::print("{}: {}", Colorize("Error", Colors::RED), initResult.error());
 			}
 			break;
 		}
 		case PlugifyState::Unload: {
 			auto& manager = s_context->GetManager();
 			manager.Terminate();
-			PLG_SUCCESS("Plugin manager was unloaded.");
+			plg::print("Plugin manager was unloaded.");
 			break;
 		}
 		case PlugifyState::Reload: {
 			auto& manager = s_context->GetManager();
 			manager.Terminate();
 			if (auto initResult = manager.Initialize()) {
-				PLG_SUCCESS("Plugin manager was reloaded.");
+				plg::print("Plugin manager was reloaded.");
 			} else {
-				PLG_ERROR(initResult.error().c_str());
+				plg::print("{}: {}", Colorize("Error", Colors::RED), initResult.error());
 			}
 			break;
 		}
@@ -2496,7 +2526,7 @@ void InitializePlugify(CAppSystemDict* pThis) {
 		.Build();
 
 	if (!plugify) {
-		PLG_ERROR(plugify.error().c_str());
+		plg::print("{}: {}", Colorize("Error", Colors::RED), plugify.error());
 		return;
 	}
 
@@ -2505,12 +2535,12 @@ void InitializePlugify(CAppSystemDict* pThis) {
 	if (auto result = s_context->Initialize()) {
 		auto& manager = s_context->GetManager();
 		if (auto initResult = manager.Initialize()) {
-			PLG_SUCCESS("Plugin manager was reloaded.");
+			plg::print("Plugin manager was reloaded.");
 		} else {
-			PLG_ERROR(initResult.error().c_str());
+			plg::print("{}: {}", Colorize("Error", Colors::RED), initResult.error());
 		}
 	} else {
-		PLG_ERROR(result.error().c_str());
+		plg::print("{}: {}", Colorize("Error", Colors::RED), result.error());
 	}
 }
 
