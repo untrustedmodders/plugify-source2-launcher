@@ -39,76 +39,67 @@ using namespace plugify;
 
 // Source2 color definitions
 namespace S2Colors {
+	static const Color RESET = Color(255, 255, 255, 255);
 	static const Color WHITE = Color(255, 255, 255, 255);
 	static const Color RED = Color(255, 0, 0, 255);
 	static const Color GREEN = Color(0, 255, 0, 255);
 	static const Color YELLOW = Color(255, 255, 0, 255);
 	static const Color BLUE = Color(0, 127, 255, 255);
 	static const Color MAGENTA = Color(255, 0, 255, 255);
+	static const Color ORANGE = Color(255, 127, 0, 255);
 	static const Color CYAN = Color(0, 255, 255, 255);
 	static const Color GRAY = Color(127, 127, 127, 255);
-	static const Color BRIGHT_RED = Color(255, 128, 128, 255);
-	static const Color BRIGHT_GREEN = Color(128, 255, 128, 255);
-	static const Color BRIGHT_YELLOW =  Color(255, 255, 128, 255);
-	static const Color BRIGHT_BLUE =  Color(128, 128, 255, 255);
-	static const Color BRIGHT_MAGENTA =  Color(255, 128, 255, 255);
-	static const Color BRIGHT_CYAN =  Color(128, 255, 255, 255);
-	static const Color BRIGHT_GRAY =  Color(200, 200, 200, 255);
+	static const Color BLACK = Color(0, 0, 0, 255);
 }
 
-// 0x00  NUL  (Null)                    ❌ NEVER USE - String terminator
-// 0x01  SOH  (Start of Heading)        ✅ Safe to use
-// 0x02  STX  (Start of Text)           ✅ Safe to use
-// 0x03  ETX  (End of Text)             ✅ Safe to use
-// 0x04  EOT  (End of Transmission)     ✅ Safe to use
-// 0x05  ENQ  (Enquiry)                 ✅ Safe to use
-// 0x06  ACK  (Acknowledge)             ✅ Safe to use
-// 0x07  BEL  (Bell)                    ⚠️  AVOID - Makes beep sound
-// 0x08  BS   (Backspace)               ⚠️  AVOID - Terminal control
-// 0x09  HT   (Horizontal Tab)          ❌ AVOID - Common in text (\t)
-// 0x0A  LF   (Line Feed)               ❌ AVOID - Newline on Unix (\n)
-// 0x0B  VT   (Vertical Tab)            ⚠️  Risky - Sometimes used
-// 0x0C  FF   (Form Feed)               ⚠️  Risky - Page break
-// 0x0D  CR   (Carriage Return)         ❌ AVOID - Newline on Windows (\r)
-// 0x0E  SO   (Shift Out)               ✅ Safe to use
-// 0x0F  SI   (Shift In)                ✅ Safe to use
-// 0x10  DLE  (Data Link Escape)        ✅ Safe to use
-// 0x11  DC1  (Device Control 1/XON)    ⚠️  Risky - Flow control
-// 0x12  DC2  (Device Control 2)        ✅ Safe to use
-// 0x13  DC3  (Device Control 3/XOFF)   ⚠️  Risky - Flow control
-// 0x14  DC4  (Device Control 4)        ✅ Safe to use
-// 0x15  NAK  (Negative Acknowledge)    ✅ Safe to use
-// 0x16  SYN  (Synchronous Idle)        ✅ Safe to use
-// 0x17  ETB  (End of Trans. Block)     ✅ Safe to use
-// 0x18  CAN  (Cancel)                  ✅ Safe to use
-// 0x19  EM   (End of Medium)           ✅ Safe to use
-// 0x1A  SUB  (Substitute)              ⚠️  AVOID - EOF on Windows (Ctrl+Z)
-// 0x1B  ESC  (Escape)                  ❌ AVOID - ANSI escape sequences
-// 0x1C  FS   (File Separator)          ✅ Safe to use
-// 0x1D  GS   (Group Separator)         ✅ Safe to use
-// 0x1E  RS   (Record Separator)        ✅ Safe to use
-// 0x1F  US   (Unit Separator)          ✅ Safe to use
+namespace {
+// 0  0x00  NUL  (Null)                    ❌ NEVER USE - String terminator
+// 1  0x01  SOH  (Start of Heading)        ✅ Safe to use
+// 2  0x02  STX  (Start of Text)           ✅ Safe to use
+// 3  0x03  ETX  (End of Text)             ✅ Safe to use
+// 4  0x04  EOT  (End of Transmission)     ✅ Safe to use
+// 5  0x05  ENQ  (Enquiry)                 ✅ Safe to use
+// 6  0x06  ACK  (Acknowledge)             ✅ Safe to use
+// 7  0x07  BEL  (Bell)                    ⚠️  AVOID - Makes beep sound
+// 8  0x08  BS   (Backspace)               ⚠️  AVOID - Terminal control
+// 9  0x09  HT   (Horizontal Tab)          ❌ AVOID - Common in text (\t)
+// 10 0x0A  LF   (Line Feed)               ❌ AVOID - Newline on Unix (\n)
+// 11 0x0B  VT   (Vertical Tab)            ⚠️  Risky - Sometimes used
+// 12 0x0C  FF   (Form Feed)               ⚠️  Risky - Page break
+// 13 0x0D  CR   (Carriage Return)         ❌ AVOID - Newline on Windows (\r)
+// 14 0x0E  SO   (Shift Out)               ✅ Safe to use
+// 15 0x0F  SI   (Shift In)                ✅ Safe to use
+// 16 0x10  DLE  (Data Link Escape)        ✅ Safe to use
+// 17 0x11  DC1  (Device Control 1/XON)    ⚠️  Risky - Flow control
+// 18 0x12  DC2  (Device Control 2)        ✅ Safe to use
+// 19 0x13  DC3  (Device Control 3/XOFF)   ⚠️  Risky - Flow control
+// 20 0x14  DC4  (Device Control 4)        ✅ Safe to use
+// 21 0x15  NAK  (Negative Acknowledge)    ✅ Safe to use
+// 22 0x16  SYN  (Synchronous Idle)        ✅ Safe to use
+// 23 0x17  ETB  (End of Trans. Block)     ✅ Safe to use
+// 24 0x18  CAN  (Cancel)                  ✅ Safe to use
+// 25 0x19  EM   (End of Medium)           ✅ Safe to use
+// 26 0x1A  SUB  (Substitute)              ⚠️  AVOID - EOF on Windows (Ctrl+Z)
+// 27 0x1B  ESC  (Escape)                  ❌ AVOID - ANSI escape sequences
+// 28 0x1C  FS   (File Separator)          ✅ Safe to use
+// 29 0x1D  GS   (Group Separator)         ✅ Safe to use
+// 30 0x1E  RS   (Record Separator)        ✅ Safe to use
+// 31 0x1F  US   (Unit Separator)          ✅ Safe to use
+}
 
 // ANSI Color codes
 struct Colors {
-	// SAFE control characters (0x01-0x0F range, avoiding common ones)
-	static constexpr char RESET         = '\x01';  // SOH (Start of Heading)
-	static constexpr char BOLD          = '\x01';  // SOH (Start of Heading)
-	static constexpr char RED           = '\x02';  // STX (Start of Text)
-	static constexpr char GREEN         = '\x03';  // ETX (End of Text)
-	static constexpr char YELLOW        = '\x04';  // EOT (End of Transmission)
-	static constexpr char BLUE          = '\x05';  // ENQ (Enquiry)
-	static constexpr char MAGENTA       = '\x06';  // ACK (Acknowledge)
-	// Skip 0x07 (BEL - makes sound on some terminals)
-	static constexpr char CYAN          = '\x0E';  // SO (Shift Out)
-	static constexpr char GRAY          = '\x0F';  // SI (Shift In)
-	static constexpr char BRIGHT_RED    = '\x10';  // DLE (Data Link Escape)
-	static constexpr char BRIGHT_GREEN  = '\x11';  // DC1 (Device Control 1)
-	static constexpr char BRIGHT_YELLOW = '\x12';  // DC2 (Device Control 2)
-	static constexpr char BRIGHT_BLUE   = '\x13';  // DC3 (Device Control 3)
-	static constexpr char BRIGHT_MAGENTA= '\x14';  // DC4 (Device Control 4)
-	static constexpr char BRIGHT_CYAN   = '\x15';  // NAK (Negative Acknowledge)
-	static constexpr char BRIGHT_GRAY   = '\x16';  // SYN (Synchronous Idle)
+	static constexpr char RESET      = '\x01';  // SOH (Start of Heading)
+	static constexpr char WHITE      = '\x01';  // SOH (Start of Heading)
+	static constexpr char RED        = '\x02';  // STX (Start of Text)
+	static constexpr char GREEN      = '\x03';  // ETX (End of Text)
+	static constexpr char YELLOW     = '\x04';  // EOT (End of Transmission)
+	static constexpr char BLUE       = '\x05';  // ENQ (Enquiry)
+	static constexpr char MAGENTA    = '\x06';  // ACK (Acknowledge)
+	static constexpr char ORANGE     = '\x07';  // BEL (Bell)
+	static constexpr char CYAN       = '\x08';  // BS  (Backspace
+	static constexpr char GRAY       = '\x0B';  // VT  (Vertical Tab)
+	static constexpr char BLACK      = '\x0C';  // FF  (Form Feed)
 };
 
 class AnsiColorParser {
@@ -120,42 +111,44 @@ public:
 
 	// Use bit flags to quickly check if a byte is a color code
     static constexpr bool isColorCode[256] = {
-        false, true,  true,  true,  true,  true,  true,  false, // 0x00-0x07
-        false, false, false, false, false, false, true,  true,  // 0x08-0x0F
-        true,  true,  true,  true,  true,  true,  true,  false, // 0x10-0x17
+        false, // 0  0x00 (unused)
+        true,  // 1  0x01 RESET
+        true,  // 2  0x02
+        true,  // 3  0x03
+        true,  // 4  0x04
+        true,  // 5  0x05
+        true,  // 6  0x06
+        true,  // 7  0x07
+        true,  // 8  0x08
+        false, // 9  0x09 (skip - TAB)
+        false, // 10 0x0A (skip - LF)
+        true,  // 11 0x0B
+        true,  // 12 0x0C
+        false, // 13 0x0D (skip - CR)
         // ... rest are false
     };
 
     static inline Color colorMap[256] = {
-        S2Colors::WHITE,     // 0x00 (unused)
-        S2Colors::WHITE,     // 0x01 RESET
-        S2Colors::RED,       // 0x02
-        S2Colors::GREEN,     // 0x03
-        S2Colors::YELLOW,    // 0x04
-        S2Colors::BLUE,      // 0x05
-        S2Colors::MAGENTA,   // 0x06
-        S2Colors::WHITE,     // 0x07 (skip - BEL)
-        S2Colors::WHITE,     // 0x08 (skip)
-        S2Colors::WHITE,     // 0x09 (skip - TAB)
-        S2Colors::WHITE,     // 0x0A (skip - LF)
-        S2Colors::WHITE,     // 0x0B (skip - VT)
-        S2Colors::WHITE,     // 0x0C (skip - FF)
-        S2Colors::WHITE,     // 0x0D (skip - CR)
-        S2Colors::CYAN,      // 0x0E
-        S2Colors::GRAY,      // 0x0F
-        S2Colors::BRIGHT_RED,    // 0x10
-        S2Colors::BRIGHT_GREEN,  // 0x11
-        S2Colors::BRIGHT_YELLOW, // 0x12
-        S2Colors::BRIGHT_BLUE,   // 0x13
-        S2Colors::BRIGHT_MAGENTA,// 0x14
-        S2Colors::BRIGHT_CYAN,   // 0x15
-        S2Colors::BRIGHT_GRAY,   // 0x16
+        S2Colors::WHITE,     // 0  0x00 (unused)
+        S2Colors::WHITE,     // 1  0x01 RESET
+        S2Colors::RED,       // 2  0x02
+        S2Colors::GREEN,     // 3  0x03
+        S2Colors::YELLOW,    // 4  0x04
+        S2Colors::BLUE,      // 5  0x05
+        S2Colors::MAGENTA,   // 6  0x06
+        S2Colors::ORANGE,    // 7  0x07
+        S2Colors::CYAN,      // 8  0x08
+        S2Colors::WHITE,     // 9  0x09 (skip - TAB)
+        S2Colors::WHITE,     // 10 0x0A (skip - LF)
+        S2Colors::GRAY,      // 11 0x0B
+        S2Colors::BLACK,     // 12 0x0C
+        S2Colors::WHITE,     // 13 0x0D (skip - CR)
         // ... etc
     };
 
 	static std::vector<TextSegment> Parse(const std::string& input) {
 		std::vector<TextSegment> segments;
-		segments.reserve(3); // Typical estimate
+		segments.reserve(4); // Typical estimate
 
 		Color currentColor = S2Colors::WHITE;
 		size_t textStart = 0;
@@ -237,25 +230,25 @@ public:
 			std::scoped_lock<std::mutex> lock(m_mutex);
 			switch (severity) {
 				case Severity::Unknown:
-					LoggingSystem_Log(m_channelID, LS_MESSAGE, Color(255, 255, 255, 255), output.c_str());
+					LoggingSystem_Log(m_channelID, LS_MESSAGE, S2Colors::WHITE, output.c_str());
 					break;
 				case Severity::Fatal:
-					LoggingSystem_Log(m_channelID, LS_ERROR, Color(255, 0, 255, 255), output.c_str());
+					LoggingSystem_Log(m_channelID, LS_ERROR, S2Colors::MAGENTA, output.c_str());
 					break;
 				case Severity::Error:
-					LoggingSystem_Log(m_channelID, LS_WARNING, Color(255, 0, 0, 255), output.c_str());
+					LoggingSystem_Log(m_channelID, LS_WARNING, S2Colors::RED, output.c_str());
 					break;
 				case Severity::Warning:
-					LoggingSystem_Log(m_channelID, LS_WARNING, Color(255, 127, 0, 255), output.c_str());
+					LoggingSystem_Log(m_channelID, LS_WARNING, S2Colors::ORANGE, output.c_str());
 					break;
 				case Severity::Info:
-					LoggingSystem_Log(m_channelID, LS_MESSAGE, Color(255, 255, 0, 255), output.c_str());
+					LoggingSystem_Log(m_channelID, LS_MESSAGE, S2Colors::YELLOW, output.c_str());
 					break;
 				case Severity::Debug:
-					LoggingSystem_Log(m_channelID, LS_MESSAGE, Color(0, 255, 0, 255), output.c_str());
+					LoggingSystem_Log(m_channelID, LS_MESSAGE, S2Colors::GREEN, output.c_str());
 					break;
 				case Severity::Verbose:
-					LoggingSystem_Log(m_channelID, LS_MESSAGE, Color(255, 255, 255, 255), output.c_str());
+					LoggingSystem_Log(m_channelID, LS_MESSAGE, S2Colors::WHITE, output.c_str());
 					break;
 				default:
 					break;
@@ -320,6 +313,9 @@ namespace plg {
 }
 
 namespace {
+	constexpr std::string_view SEPARATOR_LINE = "--------------------------------------------------------------------------------";
+	constexpr std::string_view DOUBLE_LINE = "================================================================================";
+	
 	template<typename T>
 	Result<T> ReadJson(const std::filesystem::path& path) {
 		std::ifstream file(path, std::ios::binary);
@@ -699,7 +695,7 @@ namespace {
 			prefix,
 			connector,
 			Colorize(symbol, color),
-			Colorize(ext->GetName(), Colors::BOLD),
+			Colorize(ext->GetName(), Colors::ORANGE),
 			Colorize(ext->GetVersionString(), Colors::GRAY),
 			ext->HasErrors() ? Colorize("[ERROR]", Colors::RED) : ""
 		);
@@ -861,12 +857,12 @@ namespace {
 		}
 
 		PLG_INFO(std::format("Listing {} {}{}:", count, typeName, count > 1 ? "s" : "").c_str());
-		PLG_INFO(std::string(80, '-').c_str());
+		PLG_INFO(SEPARATOR_LINE.c_str());
 
 		// Header
 		PLG_INFO(std::format("{:<3} {:<25} {:<15} {:<12} {:<8} {:<12}",
 			"#", "Name", "Version", "State", "Lang", "Load Time").c_str());
-		PLG_INFO(std::string(80, '-').c_str());
+		PLG_INFO(SEPARATOR_LINE.c_str());
 
 		size_t index = 1;
 		for (const auto& ext : extensions) {
@@ -905,7 +901,7 @@ namespace {
 				}
 			}
 		}
-		PLG_INFO(std::string(80, '-').c_str());
+		PLG_INFO(SEPARATOR_LINE.c_str());
 	}
 #else
 
@@ -928,9 +924,9 @@ namespace {
 
         plg::print(
             "{}:",
-            Colorize(std::format("Listing {} plugin{}", count, (count > 1) ? "s" : ""), Colors::BOLD)
+            Colorize(std::format("Listing {} plugin{}", count, (count > 1) ? "s" : ""), Colors::ORANGE)
         );
-        plg::print(std::string(80, '-'));
+        plg::print(SEPARATOR_LINE);
 
         // Header
         plg::print(
@@ -942,7 +938,7 @@ namespace {
             Colorize(std::format("{:<8}", "Lang"), Colors::GRAY),
             Colorize(std::format("{:<12}", "Load Time"), Colors::GRAY)
         );
-        plg::print(std::string(80, '-'));
+        plg::print(SEPARATOR_LINE);
 
         size_t index = 1;
         for (const auto& plugin : filtered) {
@@ -985,7 +981,7 @@ namespace {
         		}
         	}
         }
-        plg::print(std::string(80, '-'));
+        plg::print(SEPARATOR_LINE);
 
         // Summary
         if (filter.states.has_value() || filter.languages.has_value()
@@ -1019,9 +1015,9 @@ namespace {
 
         plg::print(
             "{}:",
-            Colorize(std::format("Listing {} module{}", count, (count > 1) ? "s" : ""), Colors::BOLD)
+            Colorize(std::format("Listing {} module{}", count, (count > 1) ? "s" : ""), Colors::ORANGE)
         );
-        plg::print(std::string(80, '-'));
+        plg::print(SEPARATOR_LINE);
 
         // Header
         plg::print(
@@ -1033,7 +1029,7 @@ namespace {
             Colorize(std::format("{:<8}", "Lang"), Colors::GRAY),
             Colorize(std::format("{:<12}", "Load Time"), Colors::GRAY)
         );
-        plg::print(std::string(80, '-'));
+        plg::print(SEPARATOR_LINE);
 
         size_t index = 1;
         for (const auto& module : filtered) {
@@ -1076,7 +1072,7 @@ namespace {
         		}
         	}
         }
-        plg::print(std::string(80, '-'));
+        plg::print(SEPARATOR_LINE);
 
         // Summary
         if (filter.states.has_value() || filter.languages.has_value()
@@ -1096,9 +1092,9 @@ namespace {
 #if 0
 	// Show detailed extension info
 	void ShowExtensionDetails(const Extension* ext, const std::string& typeName) {
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 		PLG_INFO(std::format("{} INFORMATION: {}", typeName, ext->GetName()).c_str());
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 
 		// Status
 		auto [symbol, stateColor] = GetStateInfo(ext->GetState());
@@ -1175,25 +1171,25 @@ namespace {
 			PLG_SUCCESS(std::format("{} No issues detected", Icons.Ok).c_str());
 		}
 
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 	}
 #else
 	void ShowPlugin(const Extension* plugin) {
         // Display detailed plugin information with colors
-        plg::print(std::string(80, '='));
+        plg::print(DOUBLE_LINE);
         plg::print(
             "{}: {}",
-            Colorize("PLUGIN INFORMATION", Colors::BOLD),
+            Colorize("PLUGIN INFORMATION", Colors::ORANGE),
             Colorize(plugin->GetName(), Colors::CYAN)
         );
-        plg::print(std::string(80, '='));
+        plg::print(DOUBLE_LINE);
 
         // Status indicator
         auto [symbol, stateColor] = GetStateInfo(plugin->GetState());
         plg::print(
             "\n{} {} {}",
             Colorize(symbol, stateColor),
-            Colorize("Status:", Colors::BOLD),
+            Colorize("Status:", Colors::ORANGE),
             Colorize(plg::enum_to_string(plugin->GetState()), stateColor)
         );
 
@@ -1308,7 +1304,7 @@ namespace {
                 plg::print(
                     "  {} {} {}",
                     depIndicator,
-                    Colorize(dep.GetName(), Colors::BOLD),
+                    Colorize(dep.GetName(), Colors::ORANGE),
                     Colorize(dep.GetConstraints().to_string(), Colors::GRAY)
                 );
                 if (dep.IsOptional()) {
@@ -1387,25 +1383,25 @@ namespace {
             );
         }
 
-        plg::print(std::string(80, '='));
+        plg::print(DOUBLE_LINE);
     }
 
     void ShowModule(const Extension* module) {
         // Display detailed module information with colors
-        plg::print(std::string(80, '='));
+        plg::print(DOUBLE_LINE);
         plg::print(
             "{}: {}",
-            Colorize("MODULE INFORMATION", Colors::BOLD),
+            Colorize("MODULE INFORMATION", Colors::ORANGE),
             Colorize(module->GetName(), Colors::MAGENTA)
         );
-        plg::print(std::string(80, '='));
+        plg::print(DOUBLE_LINE);
 
         // Status indicator
         auto [symbol, stateColor] = GetStateInfo(module->GetState());
         plg::print(
             "\n{} {} {}",
             Colorize(symbol, stateColor),
-            Colorize("Status:", Colors::BOLD),
+            Colorize("Status:", Colors::ORANGE),
             Colorize(plg::enum_to_string(module->GetState()), stateColor)
         );
 
@@ -1519,7 +1515,7 @@ namespace {
                 plg::print(
                     "  {} {} {}",
                     depIndicator,
-                    Colorize(dep.GetName(), Colors::BOLD),
+                    Colorize(dep.GetName(), Colors::ORANGE),
                     Colorize(dep.GetConstraints().to_string(), Colors::GRAY)
                 );
                 if (dep.IsOptional()) {
@@ -1598,7 +1594,7 @@ namespace {
             );
         }
 
-        plg::print(std::string(80, '='));
+        plg::print(DOUBLE_LINE);
     }
 #endif
 
@@ -1634,7 +1630,7 @@ namespace {
 
 		PLG_INFO(std::format("SEARCH RESULTS: Found {} match{} for '{}'",
 			matches.size(), matches.size() > 1 ? "es" : "", query).c_str());
-		PLG_INFO(std::string(80, '-').c_str());
+		PLG_INFO(SEPARATOR_LINE.c_str());
 
 		for (const auto& ext : matches) {
 			auto [symbol, color] = GetStateInfo(ext->GetState());
@@ -1648,7 +1644,7 @@ namespace {
 				PLG_INFO(std::format("  {}", Truncate(ext->GetDescription(), 70)).c_str());
 			}
 		}
-		PLG_INFO(std::string(80, '-').c_str());
+		PLG_INFO(SEPARATOR_LINE.c_str());
 	}
 #else
 	void SearchExtensions(const Manager& manager, const std::string& query) {
@@ -1680,19 +1676,19 @@ namespace {
 
         plg::print(
             "{}: Found {} match{} for '{}'",
-            Colorize("SEARCH RESULTS", Colors::BOLD),
+            Colorize("SEARCH RESULTS", Colors::ORANGE),
             matches.size(),
             matches.size() > 1 ? "es" : "",
             query
         );
-        plg::print(std::string(80, '-'));
+        plg::print(SEPARATOR_LINE);
 
         for (const auto& ext : matches) {
             auto [symbol, color] = GetStateInfo(ext->GetState());
             plg::print(
                 "{} {} {} {} {}",
                 Colorize(symbol, color),
-                Colorize(ext->GetName(), Colors::BOLD),
+                Colorize(ext->GetName(), Colors::ORANGE),
                 Colorize(ext->GetVersionString(), Colors::GRAY),
                 ext->IsPlugin() ? "[Plugin]" : "[Module]",
                 Colorize(std::format("({})", ext->GetLanguage()), Colors::GRAY)
@@ -1702,16 +1698,16 @@ namespace {
                 plg::print("  {}", Truncate(ext->GetDescription(), 70));
             }
         }
-        plg::print(std::string(80, '-'));
+        plg::print(SEPARATOR_LINE);
     }
 #endif
 
 #if 0
 	// Compare two extensions
 	void CompareExtensions(const Extension* ext1, const Extension* ext2) {
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 		PLG_INFO("EXTENSION COMPARISON");
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 
 		auto printRow = [](std::string_view label, std::string_view val1, std::string_view val2) {
 			bool same = (val1 == val2);
@@ -1722,7 +1718,7 @@ namespace {
 
 		PLG_INFO(std::format("\n{:<20} {:<25}   {:<25}",
 			"", ext1->GetName(), ext2->GetName()).c_str());
-		PLG_INFO(std::string(80, '-').c_str());
+		PLG_INFO(SEPARATOR_LINE.c_str());
 
 		printRow("Type:", ext1->IsPlugin() ? "Plugin" : "Module",
 				ext2->IsPlugin() ? "Plugin" : "Module");
@@ -1742,13 +1738,13 @@ namespace {
 			FormatDuration(ext1->GetTotalTime()),
 			FormatDuration(ext2->GetTotalTime())).c_str());
 
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 	}
 #else
 	void CompareExtensions(const Extension* ext1, const Extension* ext2) {
-        plg::print(std::string(80, '='));
-        plg::print(Colorize("EXTENSION COMPARISON", Colors::BOLD));
-        plg::print(std::string(80, '='));
+        plg::print(DOUBLE_LINE);
+        plg::print(Colorize("EXTENSION COMPARISON", Colors::ORANGE));
+        plg::print(DOUBLE_LINE);
 
         // Basic comparison table
         auto printRow = [](std::string_view label, std::string_view val1, std::string_view val2) {
@@ -1762,7 +1758,7 @@ namespace {
             Colorize(ext1->GetName(), Colors::CYAN),
             Colorize(ext2->GetName(), Colors::MAGENTA)
         );
-        plg::print(std::string(80, '-'));
+        plg::print(SEPARATOR_LINE);
 
         printRow("Type:", ext1->IsPlugin() ? "Plugin" : "Module", ext2->IsPlugin() ? "Plugin" : "Module");
         printRow("Version:", ext1->GetVersionString(), ext2->GetVersionString());
@@ -1772,7 +1768,7 @@ namespace {
         printRow("License:", ext1->GetLicense(), ext2->GetLicense());
 
         // Dependencies comparison
-        plg::print(Colorize("\n[Dependencies]", Colors::BOLD));
+        plg::print(Colorize("\n[Dependencies]", Colors::ORANGE));
         auto deps1 = ext1->GetDependencies();
         auto deps2 = ext2->GetDependencies();
 
@@ -1818,7 +1814,7 @@ namespace {
         }
 
         // Performance comparison
-        plg::print(Colorize("\n[Performance]", Colors::BOLD));
+        plg::print(Colorize("\n[Performance]", Colors::ORANGE));
         plg::print(
             "  Load Time:     {:<15} vs {:<15}",
             FormatDuration(ext1->GetOperationTime(ExtensionState::Loaded)),
@@ -1830,7 +1826,7 @@ namespace {
             FormatDuration(ext2->GetTotalTime())
         );
 
-        plg::print(std::string(80, '='));
+        plg::print(DOUBLE_LINE);
     }
 #endif
 
@@ -1846,14 +1842,14 @@ namespace {
             status = "WARNING";
         }
 
-        plg::print(std::string(80, '='));
-        plg::print(Colorize("SYSTEM HEALTH CHECK", Colors::BOLD));
-        plg::print(std::string(80, '='));
+        plg::print(DOUBLE_LINE);
+        plg::print(Colorize("SYSTEM HEALTH CHECK", Colors::ORANGE));
+        plg::print(DOUBLE_LINE);
 
         // Overall score
         plg::print(
             "\n{}: {} {}",
-            Colorize("Overall Health Score", Colors::BOLD),
+            Colorize("Overall Health Score", Colors::ORANGE),
             Colorize(std::format("{}/100", report.score), scoreColor),
             Colorize(std::format("[{}]", status), scoreColor)
         );
@@ -1908,13 +1904,13 @@ namespace {
             }
         }
 
-        plg::print(std::string(80, '='));
+        plg::print(DOUBLE_LINE);
     }
 
 	void ShowDependencyTree(const Manager& manager, const Extension* ext) {
-    	plg::print(std::string(80, '='));
-    	plg::print("{}: {}", Colorize("DEPENDENCY TREE", Colors::BOLD), ext->GetName());
-    	plg::print(std::string(80, '='));
+    	plg::print(DOUBLE_LINE);
+    	plg::print("{}: {}", Colorize("DEPENDENCY TREE", Colors::ORANGE), ext->GetName());
+    	plg::print(DOUBLE_LINE);
     	plg::print("");
 
     	PrintDependencyTree(ext, manager);
@@ -1941,7 +1937,7 @@ namespace {
     		plg::print("  {}", Colorize("None", Colors::GRAY));
     	}
 
-    	plg::print(std::string(80, '='));
+    	plg::print(DOUBLE_LINE);
     }
 }
 
@@ -2098,7 +2094,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
 	// Command callbacks
 	help_cmd->callback([]() {
-		plg::print(Colorize("Plugify Menu", Colors::BOLD));
+		plg::print(Colorize("Plugify Menu", Colors::ORANGE));
 		plg::print("(c) untrustedmodders");
 		plg::print(Colorize("https://github.com/untrustedmodders", Colors::CYAN));
 		plg::print("usage: plugify <command> [options] [arguments]");
@@ -2299,9 +2295,9 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 			status = "WARNING";
 		}
 
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 		PLG_INFO("SYSTEM HEALTH CHECK");
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 
 		PLG_LOG(std::format("Overall Health Score: {}/100 [{}]",
 			report.score, status).c_str(), scoreColor);
@@ -2349,7 +2345,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 			}
 		}
 
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 #else
 		ShowHealth(report);
 #endif
@@ -2369,9 +2365,9 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 			return;
 		}
 #if 0
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 		PLG_INFO(std::format("DEPENDENCY TREE: {}", ext->GetName()).c_str());
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 
 		PrintDependencyTree(ext, manager);
 
@@ -2395,7 +2391,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 			PLG_INFO("  None");
 		}
 
-		PLG_INFO(std::string(80, '=').c_str());
+		PLG_INFO(DOUBLE_LINE.c_str());
 #else
 		ShowDependencyTree(manager, ext);
 #endif
@@ -2442,7 +2438,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 		if (e.get_exit_code() != 0) {
 			plg::print("{}: {}", Colorize("Error", Colors::RED), e.what());
 			plg::print("usage: plugify <command> [options] [arguments]");
-			plg::print("Type '{}' for available commands.", Colorize("plugify help", Colors::BRIGHT_RED));
+			plg::print("Type '{}' for available commands.", Colorize("plugify help", Colors::ORANGE));
 		}
 	}
 }
