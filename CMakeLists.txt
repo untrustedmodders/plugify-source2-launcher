@@ -69,6 +69,7 @@ add_subdirectory(external/sourcesdk)
 #
 # Dynlibutils
 #
+set(DYNLIBUTILS_USE_ABI0 OFF CACHE INTERNAL "")
 add_subdirectory(external/dynlibutils)
 
 #
@@ -118,7 +119,7 @@ endif()
 
 set(PLUGIFY_GAME_NAME "csgo" CACHE INTERNAL "Set game name")
 set(PLUGIFY_GAME_START "matchmaking" CACHE INTERNAL "Set game library name to start after")
-set(PLUGIFY_COMPILE_DEFINITIONS
+set(S2_COMPILE_DEFINITIONS
         PLUGIFY_PLATFORM_WINDOWS=$<BOOL:${WIN32}>
         PLUGIFY_PLATFORM_APPLE=$<BOOL:${APPLE}>
         PLUGIFY_PLATFORM_LINUX=$<BOOL:${LINUX}>
@@ -137,37 +138,27 @@ set(PLUGIFY_COMPILE_DEFINITIONS
 )
 
 if(WIN32)
-    set(PLUGIFY_COMPILE_DEFINITIONS
-            ${PLUGIFY_COMPILE_DEFINITIONS}
+    set(S2_COMPILE_DEFINITIONS
+            ${S2_COMPILE_DEFINITIONS}
             PLUGIFY_PLATFORM="windows"
             PLUGIFY_BINARY="win64"
     )
 elseif(LINUX)
-    set(PLUGIFY_COMPILE_DEFINITIONS
-            ${PLUGIFY_COMPILE_DEFINITIONS}
+    set(S2_COMPILE_DEFINITIONS
+            ${S2_COMPILE_DEFINITIONS}
             PLUGIFY_PLATFORM="linux"
             PLUGIFY_BINARY="linuxsteamrt64"
     )
 elseif(APPLE)
-    set(PLUGIFY_COMPILE_DEFINITIONS
-            ${PLUGIFY_COMPILE_DEFINITIONS}
+    set(S2_COMPILE_DEFINITIONS
+            ${S2_COMPILE_DEFINITIONS}
             PLUGIFY_PLATFORM="macos"
             PLUGIFY_BINARY="osx64"
     )
 endif()
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE ${PLUGIFY_COMPILE_DEFINITIONS})
-
-if(LINUX)
-    set(PLUGIFY_PREFER_OWN_SYMBOLS "true")
-else()
-    set(PLUGIFY_PREFER_OWN_SYMBOLS "false")
-endif()
-
-configure_file(
-    ${CMAKE_SOURCE_DIR}/plugify.pconfig.in
-    ${CMAKE_BINARY_DIR}/plugify.pconfig
-)
+target_compile_definitions(${PROJECT_NAME} PRIVATE ${S2_COMPILE_DEFINITIONS})
+#target_compile_options(${PROJECT_NAME} PRIVATE ${S2_COMPILE_OPTIONS})
 
 configure_file(
     ${CMAKE_SOURCE_DIR}/crashpad.jsonc.in

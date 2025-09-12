@@ -105,7 +105,7 @@ struct Colors {
 class AnsiColorParser {
 public:
     struct TextSegment {
-        std::string text;
+        std::string_view text;
         Color color;
     };
 
@@ -146,7 +146,7 @@ public:
         // ... etc
     };
 
-	static std::vector<TextSegment> Parse(const std::string& input) {
+	static std::vector<TextSegment> Parse(std::string_view input) {
 		std::vector<TextSegment> segments;
 		segments.reserve(4); // Typical estimate
 
@@ -211,14 +211,14 @@ public:
 		LoggingSystem_Log(m_channelID, severity, "\n");
 	}
 
-	void Log(const std::string& message, LoggingSeverity_t severity) const {
+	void Log(std::string_view message, LoggingSeverity_t severity) const {
 		auto segments = AnsiColorParser::Parse(message);
 
 		std::scoped_lock<std::mutex> lock(m_mutex);
 
 		for (const auto& segment : segments) {
 			// Log each segment with its associated color
-			LoggingSystem_Log(m_channelID, severity, segment.color, segment.text.c_str());
+			LoggingSystem_Log(m_channelID, severity, segment.color, std::string(segment.text).c_str());
 		}
 		LoggingSystem_Log(m_channelID, severity, "\n");
 	}
@@ -313,8 +313,8 @@ namespace plg {
 }
 
 namespace {
-	constexpr std::string_view SEPARATOR_LINE = "--------------------------------------------------------------------------------";
-	constexpr std::string_view DOUBLE_LINE = "================================================================================";
+	constexpr const char* SEPARATOR_LINE = "--------------------------------------------------------------------------------";
+	constexpr const char* DOUBLE_LINE = "================================================================================";
 	
 	template<typename T>
 	Result<T> ReadJson(const std::filesystem::path& path) {
@@ -2782,6 +2782,12 @@ std::optional<std::filesystem::path> ExecutablePath() {
 	return std::filesystem::path(execPath).parent_path();
 }
 
+#if PLUGIFY_PLATFORM_WINDOWS
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
 int main(int argc, char* argv[]) {
 	auto binary_path = ExecutablePath().value_or(std::filesystem::current_path());
 
@@ -2800,10 +2806,10 @@ int main(int argc, char* argv[]) {
 #if PLUGIFY_PLATFORM_WINDOWS
 	int flags = LOAD_WITH_ALTERED_SEARCH_PATH;
 #else
-	int flags = 0;
+	int flags = RTLD_NOW | RTLD_GLOBAL;
 #endif
 
-	DynLibUtils::CModule engine;
+	DynLibUtils::CModule engine{};
 	engine.LoadFromPath(plg::as_string(engine_path), flags);
 	if (!engine) {
 		std::cerr << "Launcher error: " << engine.GetLastError() << std::endl;
