@@ -140,7 +140,7 @@ set(S2_COMPILE_DEFINITIONS
         S2_PROJECT_VERSION="${S2_VERSION}"
 )
 
-set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${PROJECT_OUTPUT_NAME})
+set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${S2_PACKAGE})
 
 if(WIN32)
     set(S2_MICROMAMBA "micromamba-win-64.exe")
