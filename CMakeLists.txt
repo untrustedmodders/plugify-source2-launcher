@@ -73,9 +73,15 @@ add_subdirectory(external/sourcesdk)
 add_library(sourcesdk_public INTERFACE)
 target_include_directories(sourcesdk_public INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/external/sourcesdk/public")
 if(MSVC)
-    target_compile_options(sourcesdk_public INTERFACE /wd4245)
+    target_compile_options(sourcesdk_public INTERFACE /wd4005 /wd4819 /wd4828 /wd5033 /wd4245 /wd4018)
 else()
-    target_compile_options(sourcesdk_public INTERFACE -Wno-sign-conversion)
+    target_compile_options(sourcesdk_public INTERFACE
+            -Wno-array-bounds -Wno-attributes -Wno-ignored-attributes
+            -Wno-conversion -Wno-overloaded-virtual
+            -Wno-delete-non-virtual-dtor -Wno-non-virtual-dtor
+            -Wno-invalid-offsetof -Wno-invalid-noreturn
+            -Wno-sign-compare -Wno-unused -Wno-register
+            -Wno-narrowing -Wno-shadow -Wno-sign-conversion)
 endif()
 
 #
