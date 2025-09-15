@@ -70,6 +70,14 @@ set(SOURCESDK_CONFIGURE_EXPORT_MAP OFF CACHE INTERNAL "")
 set(SOURCESDK_USE_ABI0 OFF CACHE INTERNAL "")
 add_subdirectory(external/sourcesdk)
 
+add_library(sourcesdk_public INTERFACE)
+target_include_directories(sourcesdk_public INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/external/sourcesdk/public")
+if(MSVC)
+    target_compile_options(sourcesdk_public INTERFACE /wd4245)
+else()
+    target_compile_options(sourcesdk_public INTERFACE -Wno-sign-conversion)
+endif()
+
 #
 # Dynlibutils
 #
@@ -77,12 +85,11 @@ set(DYNLIBUTILS_USE_ABI0 OFF CACHE INTERNAL "")
 add_subdirectory(external/dynlibutils)
 
 #
-# S2 Plugify
+# Main
 #
 file(GLOB_RECURSE PLUGIFY_SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "src/*.cpp")
 
 add_executable(${PROJECT_NAME} ${PLUGIFY_SOURCES})
-target_include_directories(${PROJECT_NAME} PRIVATE external/sourcesdk/public)
 
 #
 # Dependencies
@@ -92,7 +99,7 @@ include(FetchCLI)
 include(FetchReproc)
 find_package(Threads REQUIRED)
 
-set(PLUGIFY_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ crashpad_client cpp-memory_utils CLI11 sourcesdk::sourcesdk)
+set(PLUGIFY_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ crashpad_client cpp-memory_utils CLI11 sourcesdk::sourcesdk sourcesdk_public)
 
 if(NOT COMPILER_SUPPORTS_FORMAT)
     #set(PLUGIFY_LINK_LIBRARIES ${PLUGIFY_LINK_LIBRARIES} fmt::fmt-header-only)
@@ -148,7 +155,6 @@ if(WIN32)
             ${S2_COMPILE_DEFINITIONS}
             S2_PLATFORM="windows"
             S2_BINARY="win64"
-            S2_CONSOLE="powershell"
     )
 elseif(LINUX)
     set(S2_MICROMAMBA "micromamba-linux-64")
@@ -156,7 +162,6 @@ elseif(LINUX)
             ${S2_COMPILE_DEFINITIONS}
             S2_PLATFORM="linux"
             S2_BINARY="linuxsteamrt64"
-            S2_CONSOLE="bash"
     )
 elseif(APPLE)
     set(S2_MICROMAMBA "micromamba-osx-64")
@@ -164,7 +169,6 @@ elseif(APPLE)
             ${S2_COMPILE_DEFINITIONS}
             S2_PLATFORM="macos"
             S2_BINARY="osx64"
-            S2_CONSOLE="zsh"
     )
 endif()
 
