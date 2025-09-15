@@ -178,7 +178,7 @@ jobs:
             Install via curl:
             ```bash
             mkdir -p "./Counter-Strike Global Offensive/game" && cd "./Counter-Strike Global Offensive/game"
-            curl -LO ${{ needs.package.outputs.url }}
+            curl -LO "${{ needs.package.outputs.url }}"
             ```
 
       - name: Send Failure Notification
