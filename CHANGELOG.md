@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.0.0](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v1.0.23...v2.0.0) (2025-09-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* update for new plugify
+
+### Features
+
+* update for new plugify ([4ab8cec](https://github.com/untrustedmodders/plugify-source2-launcher/commit/4ab8cec08bfb47208e2b812a6e640e7ef21c2061))
+
+
+### Bug Fixes
+
+* add new dep ([174a99a](https://github.com/untrustedmodders/plugify-source2-launcher/commit/174a99a3b54270664cf61e446b96117e8e2a3721))
+* add package manager ([6324bcc](https://github.com/untrustedmodders/plugify-source2-launcher/commit/6324bcc0b77ab28a66768a00db0029f41943ca46))
+* some improvements of cli ([9a86fab](https://github.com/untrustedmodders/plugify-source2-launcher/commit/9a86fab4e9a4cbe8a8b85d437ece342417927b10))
+* some linux changes ([ab3a380](https://github.com/untrustedmodders/plugify-source2-launcher/commit/ab3a38049fc67c8f6c611781c0e078c5725ac07a))
+* some linux fixes ([d7934e0](https://github.com/untrustedmodders/plugify-source2-launcher/commit/d7934e0141830eb34677aa7eaf1620cd2286db5e))
+* switch to main ([94178a2](https://github.com/untrustedmodders/plugify-source2-launcher/commit/94178a26c68562222e1b82aac2340d5ee2b2020d))
+* typo ([25ca319](https://github.com/untrustedmodders/plugify-source2-launcher/commit/25ca319a46b179a0588bd4d82f4425335434df84))
+* update deps ([6fa7a82](https://github.com/untrustedmodders/plugify-source2-launcher/commit/6fa7a82b4b5bdeb37b58e9477dd6e061a85f7057))
+* update deps ([e0b10c0](https://github.com/untrustedmodders/plugify-source2-launcher/commit/e0b10c0bcda5472a5c32b0ea5df95db987b1e270))
+* update deps ([3e10dbe](https://github.com/untrustedmodders/plugify-source2-launcher/commit/3e10dbef9c33ca0f08248bd45b58b79a30d6c930))
+* update deps ([e047d19](https://github.com/untrustedmodders/plugify-source2-launcher/commit/e047d19396cee40253fca941cf57c56c2ac3d4bc))
+* update for a new plugify ([c9d4028](https://github.com/untrustedmodders/plugify-source2-launcher/commit/c9d4028dbb2881600413a663a1f99ef9ccb310b0))
+* update plugify ([6881462](https://github.com/untrustedmodders/plugify-source2-launcher/commit/6881462115f6ebedf2cad2da5d2a037bff9a2ab1))
+
 ## [1.0.23](https://github.com/untrustedmodders/s2-plugify/compare/v1.0.22...v1.0.23) (2025-08-15)
 
 
