@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.2](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.1...v2.0.2) (2025-09-15)
+
+
+### Bug Fixes
+
+* add same no errors as sdk ([3742c9d](https://github.com/untrustedmodders/plugify-source2-launcher/commit/3742c9d97fdd6e96cf5b5c34ae59f8ae48099042))
+* windows build ([867c80d](https://github.com/untrustedmodders/plugify-source2-launcher/commit/867c80d94cfa7f81e756a627249a55f665dd0395))
+
 ## [2.0.1](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.0...v2.0.1) (2025-09-15)
 
 
