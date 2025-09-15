@@ -70,6 +70,20 @@ set(SOURCESDK_CONFIGURE_EXPORT_MAP OFF CACHE INTERNAL "")
 set(SOURCESDK_USE_ABI0 OFF CACHE INTERNAL "")
 add_subdirectory(external/sourcesdk)
 
+add_library(sourcesdk_public INTERFACE)
+target_include_directories(sourcesdk_public INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/external/sourcesdk/public")
+if(MSVC)
+    target_compile_options(sourcesdk_public INTERFACE /wd4005 /wd4819 /wd4828 /wd5033 /wd4245 /wd4018)
+else()
+    target_compile_options(sourcesdk_public INTERFACE
+            -Wno-array-bounds -Wno-attributes -Wno-ignored-attributes
+            -Wno-conversion -Wno-overloaded-virtual
+            -Wno-delete-non-virtual-dtor -Wno-non-virtual-dtor
+            -Wno-invalid-offsetof -Wno-invalid-noreturn
+            -Wno-sign-compare -Wno-unused -Wno-register
+            -Wno-narrowing -Wno-shadow -Wno-sign-conversion)
+endif()
+
 #
 # Dynlibutils
 #
@@ -91,7 +105,7 @@ include(FetchCLI)
 include(FetchReproc)
 find_package(Threads REQUIRED)
 
-set(PLUGIFY_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ crashpad_client cpp-memory_utils CLI11 sourcesdk::sourcesdk)
+set(PLUGIFY_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ crashpad_client cpp-memory_utils CLI11 sourcesdk::sourcesdk sourcesdk_public)
 
 if(NOT COMPILER_SUPPORTS_FORMAT)
     #set(PLUGIFY_LINK_LIBRARIES ${PLUGIFY_LINK_LIBRARIES} fmt::fmt-header-only)
