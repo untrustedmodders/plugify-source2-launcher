@@ -31,32 +31,15 @@
 #include <plugify/manager.hpp>
 #include <plugify/plugify.hpp>
 
-#ifdef S2_PLATFORM_WINDOWS
+#if S2_PLATFORM_WINDOWS
 #include <windows.h>
+#undef FormatMessage
 #else
 #include <cstdlib>
 #endif
 
-inline bool setEnv(const std::string& name, const std::string& value, bool overwrite = true) {
-#ifdef S2_PLATFORM_WINDOWS
-	// Windows API overwrites by default
-	return SetEnvironmentVariableA(name.c_str(), value.c_str()) != 0;
-#else
-	return setenv(name.c_str(), value.c_str(), overwrite ? 1 : 0) == 0;
-#endif
-}
-
-inline bool unsetEnv(const std::string& name) {
-#ifdef S2_PLATFORM_WINDOWS
-	return SetEnvironmentVariableA(name.c_str(), nullptr) != 0;
-#else
-	return unsetenv(name.c_str()) == 0;
-#endif
-}
-
-#undef FormatMessage
-
 using namespace plugify;
+namespace fs = std::filesystem;
 
 // Source2 color definitions
 namespace S2Colors {
@@ -227,7 +210,7 @@ public:
 
 	void Log(std::string_view message, Color color, bool newLine) const {
 		assert((*message.end()) == 0);
-
+		assert(message.size() < 2048);
 		std::scoped_lock<std::mutex> lock(m_mutex);
 		LoggingSystem_Log(m_channelID, LS_MESSAGE, color, message.data());
 		if (newLine && message.back() != '\n') {
@@ -343,12 +326,133 @@ private:
 	LoggingChannelID_t m_channelID;
 };
 
+class FileLoggingListener final : public ILoggingListener {
+public:
+	static Result<std::unique_ptr<FileLoggingListener>>
+	Create(const fs::path& filename, bool async = true) {
+		std::error_code ec;
+		fs::create_directories(filename.parent_path(), ec);
+
+		std::ofstream file(filename, std::ios::app);
+		if (!file.is_open()) {
+			return MakeError(
+			    "Failed to open log file: {} - {}",
+			    plg::as_string(filename),
+			    std::strerror(errno)
+			);
+		}
+
+		return std::make_unique<FileLoggingListener>(std::move(file), async);
+	}
+
+	explicit FileLoggingListener(std::ofstream&& file, bool async = true)
+	    : _async(async)
+	    , _file(std::move(file)) {
+		if (_async) {
+			// Using jthread for automatic joining and stop_token support
+			_worker_thread = std::jthread([this](std::stop_token stop_token) {
+				ProcessQueue(std::move(stop_token));
+			});
+		}
+	}
+
+	// jthread automatically requests stop and joins
+	// No manual stop management needed
+	~FileLoggingListener() = default;
+
+	void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
+		if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0) {
+			return;
+		}
+
+		// Using string_view and removing trailing newline
+		std::string_view message = pMessage;
+		if (auto pos = message.find_last_not_of('\n'); pos != std::string_view::npos) {
+			message = message.substr(0, pos + 1);
+		} else if (message.find_first_not_of('\n') == std::string_view::npos) {
+			return;  // All newlines
+		}
+
+		if (message.empty()) {
+			return;
+		}
+
+		// C++23 chrono improvements with zoned_time
+		auto now = std::chrono::system_clock::now();
+		auto seconds = std::chrono::floor<std::chrono::seconds>(now);
+
+		// More robust timezone handling
+		std::string formatted_message;
+		try {
+			std::chrono::zoned_time zt{ std::chrono::current_zone(), seconds };
+			formatted_message = std::format("[{:%Y%m%d_%H%M%S}] {}", zt, message);
+		} catch (const std::exception&) {
+			// Fallback to UTC if local timezone fails
+			// auto time_t = std::chrono::system_clock::to_time_t(seconds);
+			formatted_message = std::format(
+			    "[{:%Y%m%d_%H%M%S}] {}",
+			    std::chrono::utc_clock::from_sys(seconds),
+			    message
+			);
+		}
+
+		if (_async) {
+			std::lock_guard lock(_queue_mutex);
+			_message_queue.emplace(std::move(formatted_message));
+			_condition.notify_one();
+		} else {
+			Write(formatted_message);
+		}
+	}
+
+private:
+	const bool _async;
+	mutable std::mutex _queue_mutex;
+	std::queue<std::string> _message_queue;
+	std::condition_variable _condition;
+	std::jthread _worker_thread;  // C++23: jthread for automatic management
+	mutable std::mutex _file_mutex;
+	std::ofstream _file;
+
+	void Write(const std::string& message) {
+		std::lock_guard lock(_file_mutex);
+		// Using std::print for more efficient output (C++23)
+		std::println(_file, "{}", message);
+		_file.flush();  // Consider removing for better performance
+	}
+
+	void ProcessQueue(std::stop_token stop_token) {
+		while (!stop_token.stop_requested()) {
+			std::unique_lock lock(_queue_mutex);
+
+			// C++23: Using stop_callback for clean shutdown
+			_condition.wait(lock, [this, &stop_token] {
+				return !_message_queue.empty() || stop_token.stop_requested();
+			});
+
+			// Process all queued messages
+			while (!_message_queue.empty()) {
+				auto message = std::move(_message_queue.front());
+				_message_queue.pop();
+				lock.unlock();
+				Write(message);
+				lock.lock();
+			}
+		}
+
+		// Drain remaining messages before stopping
+		std::lock_guard lock(_queue_mutex);
+		while (!_message_queue.empty()) {
+			Write(_message_queue.front());
+			_message_queue.pop();
+		}
+	}
+};
+
 enum class PlugifyState { Wait, Load, Unload, Reload };
 
-class PlugifyApp;
-
 std::shared_ptr<Plugify> s_context;
-std::unique_ptr<ILoggingListener> s_listener;
+std::unique_ptr<FileLoggingListener> s_listener;
 std::shared_ptr<Logger> s_logger;
 PlugifyState s_state;
 
@@ -385,7 +489,7 @@ namespace {
 	constexpr const char* DOUBLE_LINE = "================================================================================";
 
 	template <typename T>
-	Result<T> ReadJson(const std::filesystem::path& path) {
+	Result<T> ReadJson(const fs::path& path) {
 		std::ifstream file(path, std::ios::binary);
 		if (!file) {
 			return MakeError(
@@ -506,8 +610,8 @@ namespace {
 	}
 
 	// Format file size
-	std::uintmax_t GetSizeRecursive(const std::filesystem::path& path) {
-		namespace fs = std::filesystem;
+	std::uintmax_t GetSizeRecursive(const fs::path& path) {
+		namespace fs = fs;
 		std::uintmax_t totalSize = 0;
 		std::error_code ec;
 
@@ -533,7 +637,7 @@ namespace {
 		return totalSize;
 	}
 
-	std::string FormatFileSize(const std::filesystem::path& path) {
+	std::string FormatFileSize(const fs::path& path) {
 		try {
 			auto size = GetSizeRecursive(path);
 			if (size < 1024) {
@@ -735,16 +839,11 @@ namespace {
 		constexpr auto year = std::string_view(__DATE__).substr(7, 4);
 		return std::format(
 		    ""
-		    R"(      ____)"
-		    "\n"
-		    R"( ____|    \         Plugify {})"
-		    "\n"
-		    R"((____|     `._____  Copyright (C) 2023-{} Untrusted Modders Team)"
-		    "\n"
-		    R"( ____|       _|___)"
-		    "\n"
-		    R"((____|     .'       This program may be freely redistributed under)"
-		    "\n"
+		    R"(      ____)" "\n"
+		    R"( ____|    \         Plugify {})" "\n"
+		    R"((____|     `._____  Copyright (C) 2023-{} Untrusted Modders Team)" "\n"
+		    R"( ____|       _|___)" "\n"
+		    R"((____|     .'       This program may be freely redistributed under)" "\n"
 		    R"(     |____/         the terms of the MIT License.)",
 		    s_context->GetVersion(),
 		    year
@@ -1353,7 +1452,8 @@ namespace {
 
 			size_t displayCount = std::min<size_t>(dirs.size(), 5);
 			for (size_t i = 0; i < displayCount; ++i) {
-				bool exists = std::filesystem::exists(dirs[i]);
+				std::error_code ec;
+				bool exists = fs::exists(dirs[i], ec);
 				plg::print(
 				    "  {} {}",
 				    exists ? Colorize(Icons.Ok, Colors::GREEN) : Colorize(Icons.Fail, Colors::RED),
@@ -1845,7 +1945,7 @@ namespace {
 		}
 		const auto& manager = s_context->GetManager();
 		if (!manager.IsInitialized()) {
-			plg::print("Plugin manager not loaded.");
+			plg::print("{}: Plugin manager not loaded.", Colorize("Warning", Colors::YELLOW));
 		} else {
 			s_state = PlugifyState::Reload;
 		}
@@ -2452,7 +2552,8 @@ namespace {
 
 			size_t displayCount = std::min<size_t>(dirs.size(), 5);
 			for (size_t i = 0; i < displayCount; ++i) {
-				bool exists = std::filesystem::exists(dirs[i]);
+				std::error_code ec;
+				bool exists = fs::exists(dirs[i], ec);
 				plg::print(
 				    "  {} {}",
 				    exists ? Colorize(Icons.Ok, Colors::GREEN) : Colorize(Icons.Fail, Colors::RED),
@@ -2769,12 +2870,13 @@ namespace {
 		plg::print(SEPARATOR_LINE);
 	}
 
-	void ValidateExtension(const std::filesystem::path& path) {
+	void ValidateExtension(const fs::path& path) {
 		plg::print("{}: {}", Colorize("VALIDATING", Colors::ORANGE), plg::as_string(path));
 		plg::print(SEPARATOR_LINE);
 
 		// Check if file exists
-		if (!std::filesystem::exists(path)) {
+		std::error_code ec;
+		if (!fs::exists(path, ec)) {
 			plg::print("{} File does not exist", Colorize("✗", Colors::RED));
 			return;
 		}
@@ -3108,20 +3210,41 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 
 // Alternative shorter command
 static ConCommand plg_command("plg", plugify_callback, "Plugify control options", 0);
+static ConCommand pkg_command("plug", plugify_callback, "Micromamba control options", 0);
 
 CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
-	std::span arguments(args.ArgV(), static_cast<size_t>(args.ArgC()));
-	if (arguments.size() < 2) {
-		plg::print("Usage: {} <command> [options]", Colorize("micromamba", Colors::RED));
+	if (!s_context || !s_context->IsInitialized()) {
+		plg::print("{}: Initialize system before use.", Colorize("Error", Colors::RED));
 		return;
 	}
 
-	std::filesystem::path baseDir(Plat_GetGameDirectory());
+	if (s_context->GetManager().IsInitialized()) {
+		plg::print(
+			"{}: Package operations are only allowed when plugin manager is unloaded\n"
+			"Please run 'plugify unload' first.",
+			Colorize("Error", Colors::RED));
+		return;
+	}
+
+	std::span arguments(args.ArgV(), static_cast<size_t>(args.ArgC()));
+	if (arguments.size() < 2) {
+		plg::print("Usage: {} <command> [options]", Colorize("micromamba", Colors::CYAN));
+		return;
+	}
+
+	fs::path baseDir(Plat_GetGameDirectory());
 	baseDir /= S2_GAME_NAME "/addons/plugify/";
 
-	std::vector cmd{ plg::as_string(
-		baseDir / "bin/" S2_BINARY "/" S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX
-	) };
+	std::error_code ec;
+	fs::path exePath(baseDir / "bin/" S2_BINARY "/" S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX);
+	if (!fs::exists(exePath, ec)) {
+		plg::print("{}: {} missing - {}", Colorize("Error", Colors::RED), Colorize("micromamba", Colors::CYAN), plg::as_string(exePath));
+		return;
+	}
+
+	std::vector<std::string> cmd;
+	cmd.reserve(arguments.size() * 2);
+	cmd.push_back(plg::as_string(exePath));
 
 	// Check for specific commands that might need special handling
 	std::string_view command = arguments[1];
@@ -3130,7 +3253,7 @@ CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
 	if (command == "shell") {
 		plg::print(
 		    "'{}' is running as a subprocess and can't modify the parent shell.",
-		    Colorize("micromamba", Colors::RED)
+		    Colorize("micromamba", Colors::CYAN)
 		);
 		return;
 	}
@@ -3138,10 +3261,11 @@ CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
 	static std::string envName;
 	if (command == "activate") {
 		if (arguments.size() < 2) {
-			plg::print("Usage: {} activate <command> [options]", Colorize("micromamba", Colors::RED));
+			plg::print("Usage: {} activate <command> [options]", Colorize("micromamba", Colors::CYAN));
 			return;
 		}
 		envName = arguments[2];
+		plg::print("You activate environment: {}", Colorize(envName, Colors::CYAN));
 		return;
 	}
 
@@ -3187,6 +3311,8 @@ CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
 		    || command == "uninstall" || command == "list" || command == "search") {
 			cmd.emplace_back("-n");  // Add -n name
 			cmd.push_back(envName);
+
+			plg::print("Current environment: {}", Colorize(envName, Colors::CYAN));
 		}
 	}
 
@@ -3195,9 +3321,9 @@ CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
 	reproc::options options;
 	options.env.behavior = reproc::env::extend;
 
-	std::error_code ec = process.start(cmd, options);
+	ec = process.start(cmd, options);
 	if (ec) {
-		plg::print("{}: Failed to start micromamba - {}", Colorize("Error", Colors::RED), ec.message());
+		plg::print("{}: Failed to start {} - {}", Colorize("Error", Colors::RED), Colorize("micromamba", Colors::CYAN), ec.message());
 		return;
 	}
 
@@ -3232,6 +3358,7 @@ CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
 
 // Alternative shorter command
 static ConCommand mamba_command("mamba", micromamba_callback, "Micromamba control options", 0);
+static ConCommand conda_command("conda", micromamba_callback, "Micromamba control options", 0);
 
 using ServerGamePostSimulateFn = void (*)(IGameSystem*, const EventServerGamePostSimulate_t&);
 DynLibUtils::CVTFHookAuto<&IGameSystem::ServerGamePostSimulate> _ServerGamePostSimulate;
@@ -3245,7 +3372,7 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 		case PlugifyState::Load: {
 			auto& manager = s_context->GetManager();
 			if (auto initResult = manager.Initialize()) {
-				plg::print("Plugin manager was loaded.");
+				plg::print("{}: Plugin manager was loaded.", Colorize("Success", Colors::GREEN));
 			} else {
 				plg::print("{}: {}", Colorize("Error", Colors::RED), initResult.error());
 			}
@@ -3254,14 +3381,14 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 		case PlugifyState::Unload: {
 			auto& manager = s_context->GetManager();
 			manager.Terminate();
-			plg::print("Plugin manager was unloaded.");
+			plg::print("{}: Plugin manager was unloaded.", Colorize("Success", Colors::GREEN));
 			break;
 		}
 		case PlugifyState::Reload: {
 			auto& manager = s_context->GetManager();
 			manager.Terminate();
 			if (auto initResult = manager.Initialize()) {
-				plg::print("Plugin manager was reloaded.");
+				plg::print("{}: Plugin manager was reloaded.", Colorize("Success", Colors::GREEN));
 			} else {
 				plg::print("{}: {}", Colorize("Error", Colors::RED), initResult.error());
 			}
@@ -3298,8 +3425,21 @@ void InitializePlugify(CAppSystemDict* pThis) {
 
 	ConVar_Register(FCVAR_RELEASE | FCVAR_SERVER_CAN_EXECUTE | FCVAR_GAMEDLL);
 
-	std::filesystem::path baseDir(Plat_GetGameDirectory());
+	fs::path baseDir(Plat_GetGameDirectory());
 	baseDir /= S2_GAME_NAME "/addons/plugify/";
+
+	std::error_code ec;
+	fs::path exePath(baseDir / "bin/" S2_BINARY "/" S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX);
+	if (!fs::exists(exePath, ec)) {
+		plg::print("{}: {} missing - {}", Colorize("Error", Colors::RED), Colorize("micromamba", Colors::CYAN), plg::as_string(exePath));
+		return;
+	}
+
+	fs::permissions(exePath,
+			fs::perms::owner_all   |  // rwx for owner
+			fs::perms::group_read  | fs::perms::group_exec |
+			fs::perms::others_read | fs::perms::others_exec,
+			fs::perm_options::replace, ec);
 
 	Config::Paths paths {
 		.baseDir = std::move(baseDir),
@@ -3325,7 +3465,7 @@ void InitializePlugify(CAppSystemDict* pThis) {
 	if (auto result = s_context->Initialize()) {
 		auto& manager = s_context->GetManager();
 		if (auto initResult = manager.Initialize()) {
-			plg::print("Plugin manager was loaded.");
+			plg::print("{}: Plugin manager was loaded.", Colorize("Success", Colors::GREEN));
 		} else {
 			plg::print("{}: {}", Colorize("Error", Colors::RED), initResult.error());
 		}
@@ -3359,129 +3499,6 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
 	}
 }
 
-class FileLoggingListener final : public ILoggingListener {
-public:
-	static Result<std::unique_ptr<FileLoggingListener>>
-	Create(const std::filesystem::path& filename, bool async = true) {
-		std::error_code ec;
-		std::filesystem::create_directories(filename.parent_path(), ec);
-
-		std::ofstream file(filename, std::ios::app);
-		if (!file.is_open()) {
-			return MakeError(
-			    "Failed to open log file: {} - {}",
-			    plg::as_string(filename),
-			    std::strerror(errno)
-			);
-		}
-
-		return std::make_unique<FileLoggingListener>(std::move(file), async);
-	}
-
-	explicit FileLoggingListener(std::ofstream&& file, bool async = true)
-	    : _async(async)
-	    , _file(std::move(file)) {
-		if (_async) {
-			// Using jthread for automatic joining and stop_token support
-			_worker_thread = std::jthread([this](std::stop_token stop_token) {
-				ProcessQueue(std::move(stop_token));
-			});
-		}
-	}
-
-	// jthread automatically requests stop and joins
-	// No manual stop management needed
-	~FileLoggingListener() = default;
-
-	void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
-		if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0) {
-			return;
-		}
-
-		// Using string_view and removing trailing newline
-		std::string_view message = pMessage;
-		if (auto pos = message.find_last_not_of('\n'); pos != std::string_view::npos) {
-			message = message.substr(0, pos + 1);
-		} else if (message.find_first_not_of('\n') == std::string_view::npos) {
-			return;  // All newlines
-		}
-
-		if (message.empty()) {
-			return;
-		}
-
-		// C++23 chrono improvements with zoned_time
-		auto now = std::chrono::system_clock::now();
-		auto seconds = std::chrono::floor<std::chrono::seconds>(now);
-
-		// More robust timezone handling
-		std::string formatted_message;
-		try {
-			std::chrono::zoned_time zt{ std::chrono::current_zone(), seconds };
-			formatted_message = std::format("[{:%Y%m%d_%H%M%S}] {}", zt, message);
-		} catch (const std::exception&) {
-			// Fallback to UTC if local timezone fails
-			// auto time_t = std::chrono::system_clock::to_time_t(seconds);
-			formatted_message = std::format(
-			    "[{:%Y%m%d_%H%M%S}] {}",
-			    std::chrono::utc_clock::from_sys(seconds),
-			    message
-			);
-		}
-
-		if (_async) {
-			std::lock_guard lock(_queue_mutex);
-			_message_queue.emplace(std::move(formatted_message));
-			_condition.notify_one();
-		} else {
-			Write(formatted_message);
-		}
-	}
-
-private:
-	const bool _async;
-	mutable std::mutex _queue_mutex;
-	std::queue<std::string> _message_queue;
-	std::condition_variable _condition;
-	std::jthread _worker_thread;  // C++23: jthread for automatic management
-	mutable std::mutex _file_mutex;
-	std::ofstream _file;
-
-	void Write(const std::string& message) {
-		std::lock_guard lock(_file_mutex);
-		// Using std::print for more efficient output (C++23)
-		std::println(_file, "{}", message);
-		_file.flush();  // Consider removing for better performance
-	}
-
-	void ProcessQueue(std::stop_token stop_token) {
-		while (!stop_token.stop_requested()) {
-			std::unique_lock lock(_queue_mutex);
-
-			// C++23: Using stop_callback for clean shutdown
-			_condition.wait(lock, [this, &stop_token] {
-				return !_message_queue.empty() || stop_token.stop_requested();
-			});
-
-			// Process all queued messages
-			while (!_message_queue.empty()) {
-				auto message = std::move(_message_queue.front());
-				_message_queue.pop();
-				lock.unlock();
-				Write(message);
-				lock.lock();
-			}
-		}
-
-		// Drain remaining messages before stopping
-		std::lock_guard lock(_queue_mutex);
-		while (!_message_queue.empty()) {
-			Write(_message_queue.front());
-			_message_queue.pop();
-		}
-	}
-};
-
 using namespace plugify;
 using namespace crashpad;
 
@@ -3500,8 +3517,7 @@ struct Metadata {
 	std::optional<bool> enabled;
 };
 
-Result<void>
-InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesystem::path& annotationsPath) {
+Result<void> InitializeCrashpad(const fs::path& exeDir, const fs::path& annotationsPath) {
 	auto metadata = ReadJson<Metadata>(exeDir / annotationsPath);
 	if (!metadata) {
 		return MakeError(std::move(metadata.error()));
@@ -3511,9 +3527,20 @@ InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesystem::p
 		return {};
 	}
 
-	base::FilePath handlerApp(
-	    exeDir / std::format(S2_EXECUTABLE_PREFIX "{}" S2_EXECUTABLE_SUFFIX, metadata->handlerApp)
-	);
+	std::error_code ec;
+	fs::path exePath(exeDir / std::format(S2_EXECUTABLE_PREFIX "{}" S2_EXECUTABLE_SUFFIX, metadata->handlerApp));
+	if (!fs::exists(exePath, ec)) {
+		plg::print("{}: {} missing - {}", Colorize("Error", Colors::RED), Colorize("crashpad_handler", Colors::CYAN), plg::as_string(exePath));
+		return {};
+	}
+
+	fs::permissions(exePath,
+			fs::perms::owner_all   |  // rwx for owner
+			fs::perms::group_read  | fs::perms::group_exec |
+			fs::perms::others_read | fs::perms::others_exec,
+			fs::perm_options::replace, ec);
+
+	base::FilePath handlerApp(exePath);
 	base::FilePath databaseDir(exeDir / metadata->databaseDir);
 	base::FilePath metricsDir(exeDir / metadata->metricsDir);
 
@@ -3535,17 +3562,14 @@ InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesystem::p
 		auto now = std::chrono::system_clock::now();
 		auto seconds = std::chrono::floor<std::chrono::seconds>(now);
 		std::chrono::zoned_time zt{ std::chrono::current_zone(), seconds };
-		auto loggingPath = exeDir / metadata->logsDir
-		                   / std::format("session_{:%Y%m%d_%H%M%S}.log", zt);
+		auto loggingPath = exeDir / metadata->logsDir / std::format("session_{:%Y%m%d_%H%M%S}.log", zt);
 		auto listener = FileLoggingListener::Create(loggingPath);
 		if (!listener) {
 			return MakeError(std::move(listener.error()));
 		}
 		s_listener = std::move(*listener);
 
-		std::filesystem::path path = "console.log=";
-		path += loggingPath;
-		attachments.emplace_back(std::move(path));
+		attachments.emplace_back("console.log=" + plg::as_string(loggingPath));
 	}
 
 	// Start crash handler
@@ -3565,8 +3589,8 @@ InitializeCrashpad(const std::filesystem::path& exeDir, const std::filesystem::p
 	return {};
 }
 
-std::optional<std::filesystem::path> ExecutablePath() {
-	std::string execPath(260, '\0');
+std::optional<fs::path> ExecutablePath() {
+	std::string execPath(MAX_PATH, '\0');
 
 	while (true) {
 #if S2_PLATFORM_WINDOWS
@@ -3587,7 +3611,7 @@ std::optional<std::filesystem::path> ExecutablePath() {
 		execPath.resize(execPath.length() * 2);
 	}
 
-	return std::filesystem::path(execPath).parent_path();
+	return fs::path(std::move(execPath)).parent_path();
 }
 
 #if S2_PLATFORM_WINDOWS
@@ -3597,11 +3621,13 @@ std::optional<std::filesystem::path> ExecutablePath() {
 #endif
 
 int main(int argc, char* argv[]) {
-	auto binary_path = ExecutablePath().value_or(std::filesystem::current_path());
+	auto binary_path = ExecutablePath().value_or(fs::current_path());
 
-	if (is_directory(binary_path) && binary_path.filename() == "game") {
+	std::error_code ec;
+	if (fs::is_directory(binary_path, ec) && binary_path.filename() == "game") {
 		binary_path /= "bin/" S2_BINARY;
 	}
+
 	auto engine_path = binary_path / S2_LIBRARY_PREFIX "engine2" S2_LIBRARY_SUFFIX;
 	auto parent_path = binary_path.generic_string();
 

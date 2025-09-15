@@ -178,6 +178,6 @@ configure_file(
 
 configure_file(
     ${CMAKE_SOURCE_DIR}/micromamba/${S2_MICROMAMBA}
-    ${CMAKE_BINARY_DIR}/micromamba.exe
+    ${CMAKE_BINARY_DIR}/${CMAKE_EXECUTABLE_PREFIX}micromamba${CMAKE_EXECUTABLE_SUFFIX}
     COPYONLY
 )
