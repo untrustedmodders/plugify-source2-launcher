@@ -147,7 +147,7 @@ jobs:
 
       - name: Compress build artifacts
         run: |
-          tar -cjf build/${{ matrix.platform }}/${{ env.PROJECT_NAME }}-build-${{ matrix.platform }}-${{ needs.setup.outputs.github_sha_short }}.tar.bz2 artifacts/${{ matrix.platform }}
+          tar -cjf ${{ env.PROJECT_NAME }}-build-${{ matrix.platform }}-${{ needs.setup.outputs.github_sha_short }}.tar.bz2 artifacts/${{ matrix.platform }}
 
       - name: Upload release asset
         if: ${{ !env.ACT }}
@@ -156,7 +156,7 @@ jobs:
         with:
           tag_name: ${{ needs.setup.outputs.tag_name }}
           files: |
-            build/${{ matrix.platform }}/*.tar.bz2
+            ${{ env.PROJECT_NAME }}-build-${{ matrix.platform }}-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
 
   notify:
     needs: ["setup", "build", "package"]
