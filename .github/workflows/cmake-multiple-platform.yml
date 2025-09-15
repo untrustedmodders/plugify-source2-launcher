@@ -178,7 +178,7 @@ jobs:
             Install via curl:
             ```bash
             cd ./cs2/game
-            curl -LO ${{ needs.package.outputs.url }}
+            curl -LO [${{ needs.setup.outputs.url }}](${{ needs.package.outputs.url }})
             ```
 
       - name: Send Failure Notification
