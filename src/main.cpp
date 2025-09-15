@@ -3569,7 +3569,9 @@ Result<void> InitializeCrashpad(const fs::path& exeDir, const fs::path& annotati
 		}
 		s_listener = std::move(*listener);
 
-		attachments.emplace_back("console.log=" + plg::as_string(loggingPath));
+		fs::path dest = "console.log=";
+		dest += loggingPath;
+		attachments.emplace_back(dest);
 	}
 
 	// Start crash handler
