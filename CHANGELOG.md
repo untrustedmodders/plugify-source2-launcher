@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.3](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.2...v2.0.3) (2025-09-15)
+
+
+### Bug Fixes
+
+* compress fix ([edc2992](https://github.com/untrustedmodders/plugify-source2-launcher/commit/edc2992d6e1d3224ff6242db5689b03e69f2a68d))
+
 ## [2.0.2](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.1...v2.0.2) (2025-09-15)
 
 
