@@ -148,7 +148,7 @@ jobs:
       - name: Compress build artifacts
         run: |
           mkdir -p build/${{ matrix.platform }}
-          tar -cjf build/${{ matrix.platform }}/${{ env.PROJECT_NAME }}-build-${{ matrix.platform }}-${{ needs.setup.outputs.github_sha_short }}.tar.bz2 artifacts/${{ matrix.platform }}
+          tar -cjf build/${{ matrix.platform }}/${{ env.PROJECT_NAME }}-build-${{ matrix.platform }}-${{ needs.setup.outputs.github_sha_short }}.tar.bz2 artifacts/${{ matrix.platform }}/*
 
       - name: Upload release asset
         if: ${{ !env.ACT }}
@@ -177,8 +177,8 @@ jobs:
             
             Install via curl:
             ```bash
-            mkdir -p "./Counter-Strike Global Offensive/game" && cd "./Counter-Strike Global Offensive/game"
-            curl -LO "${{ needs.package.outputs.url }}"
+            cd ./cs2/game
+            curl -LO ${{ needs.package.outputs.url }}
             ```
 
       - name: Send Failure Notification
