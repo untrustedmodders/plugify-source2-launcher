@@ -2588,7 +2588,7 @@ namespace {
 		// ... more
 	};
 
-	void CrashpadGenericMiniDumpHandler(const MiniDumpHandlerData_t* data) {
+	void CrashpadGenericMiniDumpHandler(MiniDumpHandlerData_t* data) {
 		if (g_saveCrushDumps) {
 			SaveFullDump(data->pExceptionPointers);
 		} else {
