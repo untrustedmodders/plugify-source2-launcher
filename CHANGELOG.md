@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.8](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.7...v2.0.8) (2025-09-16)
+
+
+### Bug Fixes
+
+* discord payload (2) ([5674744](https://github.com/untrustedmodders/plugify-source2-launcher/commit/56747440d5452e15d6224a9338236f0a30993902))
+* some improvements ([5c9499f](https://github.com/untrustedmodders/plugify-source2-launcher/commit/5c9499f6941f65ec691feaf2d34ccf51b55a65c4))
+
 ## [2.0.7](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.6...v2.0.7) (2025-09-15)
 
 
