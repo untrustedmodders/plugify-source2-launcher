@@ -1,8 +1,8 @@
 {
   "url": "https://submit.backtrace.io/untrustedmodders/749bd4272841ae9311d2600fbc9609200c7d88b6497b3443da4a5f7cb6627d62/minidump",
   "handlerApp": "crashpad_handler",
-  "databaseDir": "crashpad",
-  "metricsDir": "crashpad",
+  "databaseDir": "../../${PLUGIFY_GAME_NAME}/addons/plugify/crashes",
+  "metricsDir": "../../${PLUGIFY_GAME_NAME}/addons/plugify/crashes",
   "logsDir": "../../${PLUGIFY_GAME_NAME}/addons/plugify/logs",
   "annotations": {
     "format": "minidump",

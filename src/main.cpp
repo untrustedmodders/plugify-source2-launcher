@@ -1,29 +1,33 @@
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
-#include <iostream>
 #include <queue>
 #include <thread>
+#include <print>
 #include <unordered_set>
 
-#include <appframework/iappsystem.h>
-#include <CLI/CLI.hpp>
+#if S2_PLATFORM_WINDOWS
+#include <windows.h>
+#include <dbghelp.h>
+#undef FormatMessage
+#define PLUGIFY_PLATFORM_WINDOWS 1
+#else
+#include <dlfcn.h>
+#include <cstdlib>
+#define PLUGIFY_PLATFORM_LINUX 1
+#endif
+
 #include <client/crash_report_database.h>
 #include <client/crashpad_client.h>
 #include <client/settings.h>
-#include <convar.h>
+
 #include <dynlibutils/module.hpp>
 #include <dynlibutils/virtual.hpp>
 #include <dynlibutils/vthook.hpp>
-#include <eiface.h>
+#include <CLI/CLI.hpp>
 #include <glaze/glaze.hpp>
-#include <igamesystem.h>
-#include <plg/debugging.hpp>
-#include <plg/enum.hpp>
-#include <plg/format.hpp>
 #include <reproc++/drain.hpp>
 #include <reproc++/reproc.hpp>
-#include <tier0/logging.h>
 
 #include <plugify/assembly.hpp>
 #include <plugify/extension.hpp>
@@ -31,14 +35,18 @@
 #include <plugify/manager.hpp>
 #include <plugify/plugify.hpp>
 
-#if S2_PLATFORM_WINDOWS
-#include <windows.h>
-#undef FormatMessage
-#else
-#include <cstdlib>
-#endif
+#include <plg/debugging.hpp>
+#include <plg/enum.hpp>
+#include <plg/format.hpp>
+
+#include <eiface.h>
+#include <convar.h>
+#include <igamesystem.h>
+#include <tier0/logging.h>
+#include <appframework/iappsystem.h>
 
 using namespace plugify;
+using namespace crashpad;
 namespace fs = std::filesystem;
 
 // Source2 color definitions
@@ -185,7 +193,7 @@ public:
 		result.reserve(input.length());
 
 		for (char c : input) {
-			unsigned char byte = static_cast<unsigned char>(c);
+			auto byte = static_cast<unsigned char>(c);
 			if (byte >= 32 || !isColorCode[byte]) {
 				result += c;
 			}
@@ -195,9 +203,9 @@ public:
 	}
 };
 
-class Logger final : public ILogger {
+class ConsoleLoggger final : public ILogger {
 public:
-	explicit Logger(
+	explicit ConsoleLoggger(
 	    const char* name,
 	    int flags = 0,
 	    LoggingVerbosity_t verbosity = LV_DEFAULT,
@@ -206,7 +214,7 @@ public:
 		m_channelID = LoggingSystem_RegisterLoggingChannel(name, nullptr, flags, verbosity, color);
 	}
 
-	~Logger() override = default;
+	~ConsoleLoggger() override = default;
 
 	void Log(std::string_view message, Color color, bool newLine) const {
 		assert((*message.end()) == 0);
@@ -268,7 +276,7 @@ public:
 		}
 	}
 
-	void SetLogLevel(Severity minSeverity) {
+	void SetLogLevel(Severity minSeverity) override {
 		m_severity = minSeverity;
 	}
 
@@ -451,9 +459,10 @@ private:
 
 enum class PlugifyState { Wait, Load, Unload, Reload };
 
-std::shared_ptr<Plugify> s_context;
+std::shared_ptr<Plugify> s_plugify;
+std::unique_ptr<CrashpadClient> s_crashpad;
+std::shared_ptr<ConsoleLoggger> s_logger;
 std::unique_ptr<FileLoggingListener> s_listener;
-std::shared_ptr<Logger> s_logger;
 PlugifyState s_state;
 
 namespace plg {
@@ -670,6 +679,17 @@ namespace {
 		return UniqueId{ result };
 	}
 
+	fs::path FormatFileName(std::string_view type, std::string_view format) {
+		using namespace std::chrono;
+		auto now = system_clock::now();
+		auto seconds = floor<std::chrono::seconds>(now);
+		auto ms = duration_cast<milliseconds>(now - seconds); // %F = YYYY-MM-DD, %T = HH:MM:SS
+		std::string timestamp = std::format("{:%F-%T}", seconds, static_cast<int>(ms.count()));
+		for (auto& c : timestamp)
+			if (c == ':') c = '-';
+		return std::format("{}-{}.{}", type, timestamp, format);
+	}
+
 	// Filter options
 	struct FilterOptions {
 		std::optional<std::vector<ExtensionState>> states;
@@ -791,8 +811,7 @@ namespace {
 	}
 
 	// Filter extensions based on criteria
-	std::vector<const Extension*>
-	FilterExtensions(std::vector<const Extension*> extensions, const FilterOptions& filter) {
+	std::vector<const Extension*> FilterExtensions(const std::vector<const Extension*>& extensions, const FilterOptions& filter) {
 		std::vector<const Extension*> result;
 
 		for (const auto& ext : extensions) {
@@ -832,21 +851,6 @@ namespace {
 			    }
 			    return reverse ? !result : result;
 		    }
-		);
-	}
-
-	std::string GetVersionString() {
-		constexpr auto year = std::string_view(__DATE__).substr(7, 4);
-		return std::format(
-		    ""
-		    R"(      ____)" "\n"
-		    R"( ____|    \         Plugify {})" "\n"
-		    R"((____|     `._____  Copyright (C) 2023-{} Untrusted Modders Team)" "\n"
-		    R"( ____|       _|___)" "\n"
-		    R"((____|     .'       This program may be freely redistributed under)" "\n"
-		    R"(     |____/         the terms of the MIT License.)",
-		    s_context->GetVersion(),
-		    year
 		);
 	}
 
@@ -899,11 +903,26 @@ namespace {
 		}
 	}
 
+	std::string GetVersionString() {
+		constexpr auto year = std::string_view(__DATE__).substr(7, 4);
+		return std::format(
+		    ""
+		    R"(      ____)" "\n"
+		    R"( ____|    \         Plugify {})" "\n"
+		    R"((____|     `._____  Copyright (C) 2023-{} Untrusted Modders Team)" "\n"
+		    R"( ____|       _|___)" "\n"
+		    R"((____|     .'       This program may be freely redistributed under)" "\n"
+		    R"(     |____/         the terms of the MIT License.)",
+		    s_plugify->GetVersion(),
+		    year
+		);
+	}
+
 	struct HealthReport {
 		size_t score = 100;  // 0-100
 		std::vector<std::string> issues;
 		std::vector<std::string> warnings;
-		plg::flat_map<std::string, size_t> statistics;
+		std::flat_map<std::string, size_t> statistics;
 	};
 
 	HealthReport CalculateSystemHealth(const Manager& manager) {
@@ -959,879 +978,6 @@ namespace {
 		report.score = std::max<size_t>(0, report.score);
 
 		return report;
-	}
-
-	void ListPlugins(
-	    const std::vector<const Extension*>& plugins,
-	    bool showDetails = false,
-	    const FilterOptions& filter = {},
-	    SortBy sortBy = SortBy::Name,
-	    bool reverseSort = false
-	) {
-		// Apply filters
-		auto filtered = FilterExtensions(plugins, filter);
-		SortExtensions(filtered, sortBy, reverseSort);
-
-		auto count = filtered.size();
-		if (!count) {
-			plg::print(Colorize("No plugins found matching criteria.", Colors::YELLOW));
-			return;
-		}
-
-		plg::print(
-		    "{}:",
-		    Colorize(std::format("Listing {} plugin{}", count, (count > 1) ? "s" : ""), Colors::ORANGE)
-		);
-		plg::print(SEPARATOR_LINE);
-
-		// Header
-		plg::print(
-		    "{} {} {} {} {} {}",
-		    Colorize(std::format("{:<3}", Icons.Number), Colors::GRAY),
-		    Colorize(std::format("{:<25}", "Name"), Colors::GRAY),
-		    Colorize(std::format("{:<15}", "Version"), Colors::GRAY),
-		    Colorize(std::format("{:<12}", "State"), Colors::GRAY),
-		    Colorize(std::format("{:<8}", "Lang"), Colors::GRAY),
-		    Colorize(std::format("{:<12}", "Load Time"), Colors::GRAY)
-		);
-		plg::print(SEPARATOR_LINE);
-
-		size_t index = 1;
-		for (const auto& plugin : filtered) {
-			auto state = plugin->GetState();
-			auto stateStr = plg::enum_to_string(state);
-			auto [symbol, color] = GetStateInfo(state);
-			auto& name = !plugin->GetName().empty()
-			                 ? plugin->GetName()
-			                 : plg::as_string(plugin->GetLocation().filename());
-
-			// Get load time if available
-			std::string loadTime = "N/A";
-			try {
-				auto duration = plugin->GetOperationTime(ExtensionState::Loaded);
-				if (duration.count() > 0) {
-					loadTime = FormatDuration(duration);
-				}
-			} catch (...) {
-			}
-
-			plg::print(
-			    "{:<3} {:<25} {:<15} {} {:<11} {:<8} {:<12}",
-			    index++,
-			    Truncate(name, 24),
-			    plugin->GetVersionString(),
-			    Colorize(symbol, color),
-			    Truncate(std::string(stateStr), 10),
-			    Truncate(plugin->GetLanguage(), 7),
-			    loadTime
-			);
-
-			// Show errors/warnings if any
-			if (showDetails) {
-				if (plugin->HasErrors()) {
-					for (const auto& error : plugin->GetErrors()) {
-						plg::print("     └─ {}: {}", Colorize("Error", Colors::RED), error);
-					}
-				}
-				if (plugin->HasWarnings()) {
-					for (const auto& warning : plugin->GetWarnings()) {
-						plg::print("     └─ {}: {}", Colorize("Warning", Colors::YELLOW), warning);
-					}
-				}
-			}
-		}
-		plg::print(SEPARATOR_LINE);
-
-		// Summary
-		if (filter.states.has_value() || filter.languages.has_value()
-		    || filter.searchQuery.has_value() || filter.showOnlyFailed) {
-			plg::print(
-			    "{}",
-			    Colorize(
-			        std::format("Filtered: {} of {} total plugins shown", filtered.size(), plugins.size()),
-			        Colors::GRAY
-			    )
-			);
-		}
-	}
-
-	void ListModules(
-	    const std::vector<const Extension*>& modules,
-	    bool showDetails = false,
-	    const FilterOptions& filter = {},
-	    SortBy sortBy = SortBy::Name,
-	    bool reverseSort = false
-	) {
-		// Apply filters
-		auto filtered = FilterExtensions(modules, filter);
-		SortExtensions(filtered, sortBy, reverseSort);
-
-		auto count = filtered.size();
-		if (!count) {
-			plg::print(Colorize("No modules found matching criteria.", Colors::YELLOW));
-			return;
-		}
-
-		plg::print(
-		    "{}:",
-		    Colorize(std::format("Listing {} module{}", count, (count > 1) ? "s" : ""), Colors::ORANGE)
-		);
-		plg::print(SEPARATOR_LINE);
-
-		// Header
-		plg::print(
-		    "{} {} {} {} {} {}",
-		    Colorize(std::format("{:<3}", Icons.Number), Colors::GRAY),
-		    Colorize(std::format("{:<25}", "Name"), Colors::GRAY),
-		    Colorize(std::format("{:<15}", "Version"), Colors::GRAY),
-		    Colorize(std::format("{:<12}", "State"), Colors::GRAY),
-		    Colorize(std::format("{:<8}", "Lang"), Colors::GRAY),
-		    Colorize(std::format("{:<12}", "Load Time"), Colors::GRAY)
-		);
-		plg::print(SEPARATOR_LINE);
-
-		size_t index = 1;
-		for (const auto& module : filtered) {
-			auto state = module->GetState();
-			auto stateStr = plg::enum_to_string(state);
-			auto [symbol, color] = GetStateInfo(state);
-
-			// Get load time if available
-			std::string loadTime = "N/A";
-			try {
-				auto duration = module->GetOperationTime(ExtensionState::Loaded);
-				if (duration.count() > 0) {
-					loadTime = FormatDuration(duration);
-				}
-			} catch (...) {
-			}
-
-			plg::print(
-			    "{:<3} {:<25} {:<15} {} {:<11} {:<8} {:<12}",
-			    index++,
-			    Truncate(module->GetName(), 24),
-			    module->GetVersionString(),
-			    Colorize(symbol, color),
-			    Truncate(std::string(stateStr), 10),
-			    Truncate(module->GetLanguage(), 7),
-			    loadTime
-			);
-
-			// Show errors/warnings if any
-			if (showDetails) {
-				if (module->HasErrors()) {
-					for (const auto& error : module->GetErrors()) {
-						plg::print("     └─ {}: {}", Colorize("Error", Colors::RED), error);
-					}
-				}
-				if (module->HasWarnings()) {
-					for (const auto& warning : module->GetWarnings()) {
-						plg::print("     └─ {}: {}", Colorize("Warning", Colors::YELLOW), warning);
-					}
-				}
-			}
-		}
-		plg::print(SEPARATOR_LINE);
-
-		// Summary
-		if (filter.states.has_value() || filter.languages.has_value()
-		    || filter.searchQuery.has_value() || filter.showOnlyFailed) {
-			plg::print(
-			    "{}",
-			    Colorize(
-			        std::format("Filtered: {} of {} total modules shown", filtered.size(), modules.size()),
-			        Colors::GRAY
-			    )
-			);
-		}
-	}
-
-	void ShowPlugin(const Extension* plugin) {
-		// Display detailed plugin information with colors
-		plg::print(DOUBLE_LINE);
-		plg::print(
-		    "{}: {}",
-		    Colorize("PLUGIN INFORMATION", Colors::ORANGE),
-		    Colorize(plugin->GetName(), Colors::CYAN)
-		);
-		plg::print(DOUBLE_LINE);
-
-		// Status indicator
-		auto [symbol, stateColor] = GetStateInfo(plugin->GetState());
-		plg::print(
-		    "\n{} {} {}",
-		    Colorize(symbol, stateColor),
-		    Colorize("Status:", Colors::ORANGE),
-		    Colorize(plg::enum_to_string(plugin->GetState()), stateColor)
-		);
-
-		// Basic Information
-		plg::print(Colorize("\n[Basic Information]", Colors::CYAN));
-		plg::print("  {:<15} {}", Colorize("ID:", Colors::GRAY), plugin->GetId());
-		plg::print("  {:<15} {}", Colorize("Name:", Colors::GRAY), plugin->GetName());
-		plg::print(
-		    "  {:<15} {}",
-		    Colorize("Version:", Colors::GRAY),
-		    Colorize(plugin->GetVersionString(), Colors::GREEN)
-		);
-		plg::print("  {:<15} {}", Colorize("Language:", Colors::GRAY), plugin->GetLanguage());
-		plg::print(
-		    "  {:<15} {}",
-		    Colorize("Location:", Colors::GRAY),
-		    plg::as_string(plugin->GetLocation())
-		);
-		plg::print(
-		    "  {:<15} {}",
-		    Colorize("File Size:", Colors::GRAY),
-		    FormatFileSize(plugin->GetLocation())
-		);
-
-		// Optional Information
-		if (!plugin->GetDescription().empty() || !plugin->GetAuthor().empty()
-		    || !plugin->GetWebsite().empty() || !plugin->GetLicense().empty()) {
-			plg::print(Colorize("\n[Additional Information]", Colors::CYAN));
-			if (!plugin->GetDescription().empty()) {
-				plg::print(
-				    "  {:<15} {}",
-				    Colorize("Description:", Colors::GRAY),
-				    plugin->GetDescription()
-				);
-			}
-			if (!plugin->GetAuthor().empty()) {
-				plg::print(
-				    "  {:<15} {}",
-				    Colorize("Author:", Colors::GRAY),
-				    Colorize(plugin->GetAuthor(), Colors::MAGENTA)
-				);
-			}
-			if (!plugin->GetWebsite().empty()) {
-				plg::print(
-				    "  {:<15} {}",
-				    Colorize("Website:", Colors::GRAY),
-				    Colorize(plugin->GetWebsite(), Colors::BLUE)
-				);
-			}
-			if (!plugin->GetLicense().empty()) {
-				plg::print("  {:<15} {}", Colorize("License:", Colors::GRAY), plugin->GetLicense());
-			}
-		}
-
-		// Plugin-specific information
-		if (!plugin->GetEntry().empty()) {
-			plg::print(Colorize("\n[Plugin Details]", Colors::CYAN));
-			plg::print(
-			    "  {:<15} {}",
-			    Colorize("Entry Point:", Colors::GRAY),
-			    Colorize(plugin->GetEntry(), Colors::YELLOW)
-			);
-		}
-
-		// Methods
-		const auto& methods = plugin->GetMethods();
-		if (!methods.empty()) {
-			plg::print(
-			    Colorize("\n[Exported Methods]", Colors::CYAN)
-			    + Colorize(std::format(" ({} total)", methods.size()), Colors::GRAY)
-			);
-
-			size_t displayCount = std::min<size_t>(methods.size(), 10);
-			for (size_t i = 0; i < displayCount; ++i) {
-				const auto& method = methods[i];
-				plg::print(
-				    "  {}{:<2} {}",
-				    Colorize(Icons.Number, Colors::GRAY),
-				    i + 1,
-				    Colorize(method.GetName(), Colors::GREEN)
-				);
-				if (!method.GetFuncName().empty()) {
-					plg::print(
-					    "      {} {}",
-					    Colorize("Func Name:", Colors::GRAY),
-					    method.GetFuncName()
-					);
-				}
-			}
-			if (methods.size() > 10) {
-				plg::print(
-				    "  {} ... and {} more methods",
-				    Colorize(Icons.Arrow, Colors::GRAY),
-				    methods.size() - 10
-				);
-			}
-		}
-
-		// Platforms
-		const auto& platforms = plugin->GetPlatforms();
-		if (!platforms.empty()) {
-			plg::print(Colorize("\n[Supported Platforms]", Colors::CYAN));
-			plg::print("  {}", Colorize(plg::join(platforms, ", "), Colors::GREEN));
-		}
-
-		// Dependencies
-		const auto& deps = plugin->GetDependencies();
-		if (!deps.empty()) {
-			plg::print(
-			    Colorize("\n[Dependencies]", Colors::CYAN)
-			    + Colorize(std::format(" ({} total)", deps.size()), Colors::GRAY)
-			);
-			for (const auto& dep : deps) {
-				std::string depIndicator = dep.IsOptional() ? Colorize(Icons.Skipped, Colors::GRAY)
-				                                            : Colorize(Icons.Valid, Colors::GREEN);
-				plg::print(
-				    "  {} {} {}",
-				    depIndicator,
-				    Colorize(dep.GetName(), Colors::ORANGE),
-				    Colorize(dep.GetConstraints().to_string(), Colors::GRAY)
-				);
-				if (dep.IsOptional()) {
-					plg::print("    └─ {}", Colorize("Optional", Colors::GRAY));
-				}
-			}
-		}
-
-		// Conflicts
-		const auto& conflicts = plugin->GetConflicts();
-		if (!conflicts.empty()) {
-			plg::print(
-			    Colorize("\n[Conflicts]", Colors::YELLOW)
-			    + Colorize(std::format(" ({} total)", conflicts.size()), Colors::GRAY)
-			);
-			for (const auto& conflict : conflicts) {
-				plg::print(
-				    "  {} {} {}",
-				    Colorize(Icons.Warning, Colors::YELLOW),
-				    conflict.GetName(),
-				    Colorize(conflict.GetConstraints().to_string(), Colors::GRAY)
-				);
-				if (!conflict.GetReason().empty()) {
-					plg::print("    └─ {}", Colorize(conflict.GetReason(), Colors::RED));
-				}
-			}
-		}
-
-		// Performance Information
-		plg::print(Colorize("\n[Performance Metrics]", Colors::CYAN));
-		auto totalTime = plugin->GetTotalTime();
-		plg::print(
-		    "  {:<15} {}",
-		    Colorize("Total Time:", Colors::GRAY),
-		    Colorize(
-		        FormatDuration(totalTime),
-		        totalTime > std::chrono::seconds(1) ? Colors::YELLOW : Colors::GREEN
-		    )
-		);
-
-		// Show timing for different operations
-		ExtensionState operations[] = { ExtensionState::Parsing,
-			                            ExtensionState::Resolving,
-			                            ExtensionState::Loading,
-			                            ExtensionState::Starting };
-
-		for (const auto& op : operations) {
-			try {
-				auto duration = plugin->GetOperationTime(op);
-				if (duration.count() > 0) {
-					bool slow = duration > std::chrono::milliseconds(500);
-					plg::print(
-					    "  {:<15} {}",
-					    Colorize(std::format("{}:", plg::enum_to_string(op)), Colors::GRAY),
-					    Colorize(FormatDuration(duration), slow ? Colors::YELLOW : Colors::GREEN)
-					);
-				}
-			} catch (...) {
-			}
-		}
-
-		// Errors and Warnings
-		if (plugin->HasErrors() || plugin->HasWarnings()) {
-			plg::print(Colorize("\n[Issues]", Colors::RED));
-			for (const auto& error : plugin->GetErrors()) {
-				plg::print("  {} {}", Colorize("ERROR:", Colors::RED), error);
-			}
-			for (const auto& warning : plugin->GetWarnings()) {
-				plg::print("  {} {}", Colorize("WARNING:", Colors::YELLOW), warning);
-			}
-		} else {
-			plg::print(
-			    "\n{} {}",
-			    Colorize(Icons.Ok, Colors::GREEN),
-			    Colorize("No issues detected", Colors::GREEN)
-			);
-		}
-
-		plg::print(DOUBLE_LINE);
-	}
-
-	void ShowModule(const Extension* module) {
-		// Display detailed module information with colors
-		plg::print(DOUBLE_LINE);
-		plg::print(
-		    "{}: {}",
-		    Colorize("MODULE INFORMATION", Colors::ORANGE),
-		    Colorize(module->GetName(), Colors::MAGENTA)
-		);
-		plg::print(DOUBLE_LINE);
-
-		// Status indicator
-		auto [symbol, stateColor] = GetStateInfo(module->GetState());
-		plg::print(
-		    "\n{} {} {}",
-		    Colorize(symbol, stateColor),
-		    Colorize("Status:", Colors::ORANGE),
-		    Colorize(plg::enum_to_string(module->GetState()), stateColor)
-		);
-
-		// Basic Information
-		plg::print(Colorize("\n[Basic Information]", Colors::CYAN));
-		plg::print("  {:<15} {}", Colorize("ID:", Colors::GRAY), module->GetId());
-		plg::print("  {:<15} {}", Colorize("Name:", Colors::GRAY), module->GetName());
-		plg::print(
-		    "  {:<15} {}",
-		    Colorize("Version:", Colors::GRAY),
-		    Colorize(module->GetVersionString(), Colors::GREEN)
-		);
-		plg::print("  {:<15} {}", Colorize("Language:", Colors::GRAY), module->GetLanguage());
-		plg::print(
-		    "  {:<15} {}",
-		    Colorize("Location:", Colors::GRAY),
-		    plg::as_string(module->GetLocation())
-		);
-		plg::print(
-		    "  {:<15} {}",
-		    Colorize("File Size:", Colors::GRAY),
-		    FormatFileSize(module->GetLocation())
-		);
-
-		// Optional Information
-		if (!module->GetDescription().empty() || !module->GetAuthor().empty()
-		    || !module->GetWebsite().empty() || !module->GetLicense().empty()) {
-			plg::print(Colorize("\n[Additional Information]", Colors::CYAN));
-			if (!module->GetDescription().empty()) {
-				plg::print(
-				    "  {:<15} {}",
-				    Colorize("Description:", Colors::GRAY),
-				    module->GetDescription()
-				);
-			}
-			if (!module->GetAuthor().empty()) {
-				plg::print(
-				    "  {:<15} {}",
-				    Colorize("Author:", Colors::GRAY),
-				    Colorize(module->GetAuthor(), Colors::MAGENTA)
-				);
-			}
-			if (!module->GetWebsite().empty()) {
-				plg::print(
-				    "  {:<15} {}",
-				    Colorize("Website:", Colors::GRAY),
-				    Colorize(module->GetWebsite(), Colors::BLUE)
-				);
-			}
-			if (!module->GetLicense().empty()) {
-				plg::print("  {:<15} {}", Colorize("License:", Colors::GRAY), module->GetLicense());
-			}
-		}
-
-		// Module-specific information
-		if (!module->GetRuntime().empty()) {
-			plg::print(Colorize("\n[Module Details]", Colors::CYAN));
-			plg::print(
-			    "  {:<15} {}",
-			    Colorize("Runtime:", Colors::GRAY),
-			    Colorize(plg::as_string(module->GetRuntime()), Colors::YELLOW)
-			);
-		}
-
-		// Directories
-		const auto& dirs = module->GetDirectories();
-		if (!dirs.empty()) {
-			plg::print(
-			    Colorize("\n[Search Directories]", Colors::CYAN)
-			    + Colorize(std::format(" ({} total)", dirs.size()), Colors::GRAY)
-			);
-
-			size_t displayCount = std::min<size_t>(dirs.size(), 5);
-			for (size_t i = 0; i < displayCount; ++i) {
-				std::error_code ec;
-				bool exists = fs::exists(dirs[i], ec);
-				plg::print(
-				    "  {} {}",
-				    exists ? Colorize(Icons.Ok, Colors::GREEN) : Colorize(Icons.Fail, Colors::RED),
-				    plg::as_string(dirs[i])
-				);
-			}
-			if (dirs.size() > 5) {
-				plg::print(
-				    "  {} ... and {} more directories",
-				    Colorize(Icons.Arrow, Colors::GRAY),
-				    dirs.size() - 5
-				);
-			}
-		}
-
-		// Assembly Information
-		if (auto assembly = module->GetAssembly()) {
-			plg::print(Colorize("\n[Assembly Information]", Colors::CYAN));
-			plg::print("  {} Assembly loaded and active", Colorize(Icons.Ok, Colors::GREEN));
-			// Add more assembly details if available in your IAssembly interface
-		}
-
-		// Platforms
-		const auto& platforms = module->GetPlatforms();
-		if (!platforms.empty()) {
-			plg::print(Colorize("\n[Supported Platforms]", Colors::CYAN));
-			plg::print("  {}", Colorize(plg::join(platforms, ", "), Colors::GREEN));
-		}
-
-		// Dependencies
-		const auto& deps = module->GetDependencies();
-		if (!deps.empty()) {
-			plg::print(
-			    Colorize("\n[Dependencies]", Colors::CYAN)
-			    + Colorize(std::format(" ({} total)", deps.size()), Colors::GRAY)
-			);
-			for (const auto& dep : deps) {
-				std::string depIndicator = dep.IsOptional() ? Colorize(Icons.Skipped, Colors::GRAY)
-				                                            : Colorize(Icons.Valid, Colors::GREEN);
-				plg::print(
-				    "  {} {} {}",
-				    depIndicator,
-				    Colorize(dep.GetName(), Colors::ORANGE),
-				    Colorize(dep.GetConstraints().to_string(), Colors::GRAY)
-				);
-				if (dep.IsOptional()) {
-					plg::print("    └─ {}", Colorize("Optional", Colors::GRAY));
-				}
-			}
-		}
-
-		// Conflicts
-		const auto& conflicts = module->GetConflicts();
-		if (!conflicts.empty()) {
-			plg::print(
-			    Colorize("\n[Conflicts]", Colors::YELLOW)
-			    + Colorize(std::format(" ({} total)", conflicts.size()), Colors::GRAY)
-			);
-			for (const auto& conflict : conflicts) {
-				plg::print(
-				    "  {} {} {}",
-				    Colorize(Icons.Warning, Colors::YELLOW),
-				    conflict.GetName(),
-				    Colorize(conflict.GetConstraints().to_string(), Colors::GRAY)
-				);
-				if (!conflict.GetReason().empty()) {
-					plg::print("    └─ {}", Colorize(conflict.GetReason(), Colors::RED));
-				}
-			}
-		}
-
-		// Performance Information
-		plg::print(Colorize("\n[Performance Metrics]", Colors::CYAN));
-		auto totalTime = module->GetTotalTime();
-		plg::print(
-		    "  {:<15} {}",
-		    Colorize("Total Time:", Colors::GRAY),
-		    Colorize(
-		        FormatDuration(totalTime),
-		        totalTime > std::chrono::seconds(1) ? Colors::YELLOW : Colors::GREEN
-		    )
-		);
-
-		// Show timing for different operations
-		ExtensionState operations[] = { ExtensionState::Parsing,
-			                            ExtensionState::Resolving,
-			                            ExtensionState::Loading,
-			                            ExtensionState::Starting };
-
-		for (const auto& op : operations) {
-			try {
-				auto duration = module->GetOperationTime(op);
-				if (duration.count() > 0) {
-					bool slow = duration > std::chrono::milliseconds(500);
-					plg::print(
-					    "  {:<15} {}",
-					    Colorize(std::format("{}:", plg::enum_to_string(op)), Colors::GRAY),
-					    Colorize(FormatDuration(duration), slow ? Colors::YELLOW : Colors::GREEN)
-					);
-				}
-			} catch (...) {
-			}
-		}
-
-		// Errors and Warnings
-		if (module->HasErrors() || module->HasWarnings()) {
-			plg::print(Colorize("\n[Issues]", Colors::RED));
-			for (const auto& error : module->GetErrors()) {
-				plg::print("  {} {}", Colorize("ERROR:", Colors::RED), error);
-			}
-			for (const auto& warning : module->GetWarnings()) {
-				plg::print("  {} {}", Colorize("WARNING:", Colors::YELLOW), warning);
-			}
-		} else {
-			plg::print(
-			    "\n{} {}",
-			    Colorize(Icons.Ok, Colors::GREEN),
-			    Colorize("No issues detected", Colors::GREEN)
-			);
-		}
-
-		plg::print(DOUBLE_LINE);
-	}
-
-	void SearchExtensions(const Manager& manager, const std::string& query) {
-		auto allExtensions = manager.GetExtensions();
-
-		std::vector<const Extension*> matches;
-		std::string lowerQuery(query);
-		std::transform(lowerQuery.begin(), lowerQuery.end(), lowerQuery.begin(), ::tolower);
-
-		for (const auto& ext : allExtensions) {
-			std::string name = ext->GetName();
-			std::string desc = ext->GetDescription();
-			std::string author = ext->GetAuthor();
-
-			std::transform(name.begin(), name.end(), name.begin(), ::tolower);
-			std::transform(desc.begin(), desc.end(), desc.begin(), ::tolower);
-			std::transform(author.begin(), author.end(), author.begin(), ::tolower);
-
-			if (name.find(lowerQuery) != std::string::npos || desc.find(lowerQuery) != std::string::npos
-			    || author.find(lowerQuery) != std::string::npos) {
-				matches.push_back(ext);
-			}
-		}
-
-		if (matches.empty()) {
-			plg::print(
-			    "{} No extensions found matching '{}'",
-			    Colorize(Icons.Missing, Colors::YELLOW),
-			    query
-			);
-			return;
-		}
-
-		plg::print(
-		    "{}: Found {} match{} for '{}'",
-		    Colorize("SEARCH RESULTS", Colors::ORANGE),
-		    matches.size(),
-		    matches.size() > 1 ? "es" : "",
-		    query
-		);
-		plg::print(SEPARATOR_LINE);
-
-		for (const auto& ext : matches) {
-			auto [symbol, color] = GetStateInfo(ext->GetState());
-			plg::print(
-			    "{} {} {} {} {}",
-			    Colorize(symbol, color),
-			    Colorize(ext->GetName(), Colors::ORANGE),
-			    Colorize(ext->GetVersionString(), Colors::GRAY),
-			    ext->IsPlugin() ? "[Plugin]" : "[Module]",
-			    Colorize(std::format("({})", ext->GetLanguage()), Colors::GRAY)
-			);
-
-			if (!ext->GetDescription().empty()) {
-				plg::print("  {}", Truncate(ext->GetDescription(), 70));
-			}
-		}
-		plg::print(SEPARATOR_LINE);
-	}
-
-	void CompareExtensions(const Extension* ext1, const Extension* ext2) {
-		plg::print(DOUBLE_LINE);
-		plg::print(Colorize("EXTENSION COMPARISON", Colors::ORANGE));
-		plg::print(DOUBLE_LINE);
-
-		// Basic comparison table
-		auto printRow = [](std::string_view label, std::string_view val1, std::string_view val2) {
-			bool same = (val1 == val2);
-			plg::print("{:<20} {:<25} {} {:<25}", label, val1, same ? Icons.Equal : Icons.NotEqual, val2);
-		};
-
-		plg::print(
-		    "\n{:<20} {:<25}   {:<25}",
-		    "",
-		    Colorize(ext1->GetName(), Colors::CYAN),
-		    Colorize(ext2->GetName(), Colors::MAGENTA)
-		);
-		plg::print(SEPARATOR_LINE);
-
-		printRow("Type:", ext1->IsPlugin() ? "Plugin" : "Module", ext2->IsPlugin() ? "Plugin" : "Module");
-		printRow("Version:", ext1->GetVersionString(), ext2->GetVersionString());
-		printRow("Language:", ext1->GetLanguage(), ext2->GetLanguage());
-		printRow("State:", plg::enum_to_string(ext1->GetState()), plg::enum_to_string(ext2->GetState()));
-		printRow("Author:", ext1->GetAuthor(), ext2->GetAuthor());
-		printRow("License:", ext1->GetLicense(), ext2->GetLicense());
-
-		// Dependencies comparison
-		plg::print(Colorize("\n[Dependencies]", Colors::ORANGE));
-		auto deps1 = ext1->GetDependencies();
-		auto deps2 = ext2->GetDependencies();
-
-		std::set<std::string> depNames1, depNames2;
-		for (const auto& d : deps1) {
-			depNames1.insert(d.GetName());
-		}
-		for (const auto& d : deps2) {
-			depNames2.insert(d.GetName());
-		}
-
-		std::vector<std::string> onlyIn1, onlyIn2, common;
-		std::set_difference(
-		    depNames1.begin(),
-		    depNames1.end(),
-		    depNames2.begin(),
-		    depNames2.end(),
-		    std::back_inserter(onlyIn1)
-		);
-		std::set_difference(
-		    depNames2.begin(),
-		    depNames2.end(),
-		    depNames1.begin(),
-		    depNames1.end(),
-		    std::back_inserter(onlyIn2)
-		);
-		std::set_intersection(
-		    depNames1.begin(),
-		    depNames1.end(),
-		    depNames2.begin(),
-		    depNames2.end(),
-		    std::back_inserter(common)
-		);
-
-		if (!common.empty()) {
-			plg::print("  Common: {}", plg::join(common, ", "));
-		}
-		if (!onlyIn1.empty()) {
-			plg::print("  Only in {}: {}", ext1->GetName(), plg::join(onlyIn1, ", "));
-		}
-		if (!onlyIn2.empty()) {
-			plg::print("  Only in {}: {}", ext2->GetName(), plg::join(onlyIn2, ", "));
-		}
-
-		// Performance comparison
-		plg::print(Colorize("\n[Performance]", Colors::ORANGE));
-		plg::print(
-		    "  Load Time:     {:<15} vs {:<15}",
-		    FormatDuration(ext1->GetOperationTime(ExtensionState::Loaded)),
-		    FormatDuration(ext2->GetOperationTime(ExtensionState::Loaded))
-		);
-		plg::print(
-		    "  Total Time:    {:<15} vs {:<15}",
-		    FormatDuration(ext1->GetTotalTime()),
-		    FormatDuration(ext2->GetTotalTime())
-		);
-
-		plg::print(DOUBLE_LINE);
-	}
-
-	void ShowHealth(HealthReport& report) {
-		// Determine health status color
-		ColorCode scoreColor = Colors::GREEN;
-		std::string status = "HEALTHY";
-		if (report.score < 50) {
-			scoreColor = Colors::RED;
-			status = "CRITICAL";
-		} else if (report.score < 75) {
-			scoreColor = Colors::YELLOW;
-			status = "WARNING";
-		}
-
-		plg::print(DOUBLE_LINE);
-		plg::print(Colorize("SYSTEM HEALTH CHECK", Colors::ORANGE));
-		plg::print(DOUBLE_LINE);
-
-		// Overall score
-		plg::print(
-		    "\n{}: {} {}",
-		    Colorize("Overall Health Score", Colors::ORANGE),
-		    Colorize(std::format("{}/100", report.score), scoreColor),
-		    Colorize(std::format("[{}]", status), scoreColor)
-		);
-
-		// Statistics
-		plg::print(Colorize("\n[Statistics]", Colors::CYAN));
-		plg::print("  Total Extensions:        {}", report.statistics["total_extensions"]);
-		plg::print(
-		    "  Failed Extensions:       {} {}",
-		    report.statistics["failed_extensions"],
-		    report.statistics["failed_extensions"] > 0 ? Colorize(Icons.Warning, Colors::RED)
-		                                               : Colorize(Icons.Ok, Colors::GREEN)
-		);
-		plg::print(
-		    "  Extensions with Errors:  {} {}",
-		    report.statistics["extensions_with_errors"],
-		    report.statistics["extensions_with_errors"] > 0 ? Colorize(Icons.Warning, Colors::YELLOW)
-		                                                    : Colorize(Icons.Ok, Colors::GREEN)
-		);
-		plg::print("  Total Warnings:          {}", report.statistics["total_warnings"]);
-		plg::print("  Slow Loading Extensions: {}", report.statistics["slow_loading_extensions"]);
-
-		// Issues
-		if (!report.issues.empty()) {
-			plg::print(Colorize("\n[Critical Issues]", Colors::RED));
-			for (const auto& issue : report.issues) {
-				plg::print("  {} {}", Colorize(Icons.Fail, Colors::RED), issue);
-			}
-		}
-
-		// Warnings
-		if (!report.warnings.empty()) {
-			plg::print(Colorize("\n[Warnings]", Colors::YELLOW));
-			for (const auto& warning : report.warnings) {
-				plg::print("  {} {}", Colorize(Icons.Warning, Colors::YELLOW), warning);
-			}
-		}
-
-		// Recommendations
-		plg::print(Colorize("\n[Recommendations]", Colors::CYAN));
-		if (report.score == 100) {
-			plg::print("  {} System is running optimally!", Colorize(Icons.Ok, Colors::GREEN));
-		} else {
-			if (report.statistics["failed_extensions"] > 0) {
-				plg::print("  • Fix or remove failed extensions");
-			}
-			if (report.statistics["extensions_with_errors"] > 0) {
-				plg::print("  • Review and resolve extension errors");
-			}
-			if (report.statistics["slow_loading_extensions"] > 0) {
-				plg::print("  • Investigate slow-loading extensions for optimization");
-			}
-		}
-
-		plg::print(DOUBLE_LINE);
-	}
-
-	void ShowDependencyTree(const Manager& manager, const Extension* ext) {
-		plg::print(DOUBLE_LINE);
-		plg::print("{}: {}", Colorize("DEPENDENCY TREE", Colors::ORANGE), ext->GetName());
-		plg::print(DOUBLE_LINE);
-		plg::print("");
-
-		PrintDependencyTree(ext, manager);
-
-		// Also show what depends on this extension
-		plg::print(Colorize("\n[Reverse Dependencies]", Colors::CYAN));
-		plg::print("Extensions that depend on this:");
-
-		bool found = false;
-		for (const auto& other : manager.GetExtensions()) {
-			for (const auto& dep : other->GetDependencies()) {
-				if (dep.GetName() == ext->GetName()) {
-					plg::print(
-					    "  • {} {}",
-					    other->GetName(),
-					    dep.IsOptional() ? Colorize("[optional]", Colors::GRAY) : ""
-					);
-					found = true;
-				}
-			}
-		}
-
-		if (!found) {
-			plg::print("  {}", Colorize("None", Colors::GRAY));
-		}
-
-		plg::print(DOUBLE_LINE);
 	}
 
 	// Helper function to parse comma-separated values
@@ -1897,11 +1043,11 @@ namespace {
 	};
 
 	bool CheckManager() {
-		if (!s_context->IsInitialized()) {
+		if (!s_plugify->IsInitialized()) {
 			plg::print("{}: Initialize system before use.", Colorize("Error", Colors::RED));
 			return false;
 		}
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		if (!manager.IsInitialized()) {
 			plg::print(
 			    "{}: You must load plugin manager before query any information from it.",
@@ -1913,11 +1059,11 @@ namespace {
 	}
 
 	void LoadManager() {
-		if (!s_context->IsInitialized()) {
+		if (!s_plugify->IsInitialized()) {
 			plg::print("{}: Initialize system before use.", Colorize("Error", Colors::RED));
 			return;
 		}
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		if (manager.IsInitialized()) {
 			plg::print("{}: Plugin manager already loaded.", Colorize("Error", Colors::RED));
 		} else {
@@ -1926,11 +1072,11 @@ namespace {
 	}
 
 	void UnloadManager() {
-		if (!s_context->IsInitialized()) {
+		if (!s_plugify->IsInitialized()) {
 			plg::print("{}: Initialize system before use.", Colorize("Error", Colors::RED));
 			return;
 		}
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		if (!manager.IsInitialized()) {
 			plg::print("{}: Plugin manager already unloaded.", Colorize("Error", Colors::RED));
 		} else {
@@ -1939,11 +1085,11 @@ namespace {
 	}
 
 	void ReloadManager() {
-		if (!s_context->IsInitialized()) {
+		if (!s_plugify->IsInitialized()) {
 			plg::print("{}: Initialize system before use.", Colorize("Error", Colors::RED));
 			return;
 		}
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		if (!manager.IsInitialized()) {
 			plg::print("{}: Plugin manager not loaded.", Colorize("Warning", Colors::YELLOW));
 		} else {
@@ -1961,7 +1107,7 @@ namespace {
 			return;
 		}
 
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		auto plugins = manager.GetExtensionsByType(ExtensionType::Plugin);
 
 		// Apply filters
@@ -2070,7 +1216,7 @@ namespace {
 			return;
 		}
 
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		auto modules = manager.GetExtensionsByType(ExtensionType::Module);
 
 		// Apply filters
@@ -2171,7 +1317,7 @@ namespace {
 			return;
 		}
 
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		auto plugin = plugin_use_id ? manager.FindExtension(FormatId(identifier))
 		                            : manager.FindExtension(identifier);
 
@@ -2427,7 +1573,7 @@ namespace {
 			return;
 		}
 
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		auto module = module_use_id ? manager.FindExtension(FormatId(identifier))
 		                            : manager.FindExtension(identifier);
 
@@ -2683,7 +1829,7 @@ namespace {
 			return;
 		}
 
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		auto report = CalculateSystemHealth(manager);
 
 		// Determine health status color
@@ -2767,7 +1913,7 @@ namespace {
 			return;
 		}
 
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		auto ext = useId ? manager.FindExtension(FormatId(name)) : manager.FindExtension(name);
 
 		if (!ext) {
@@ -2812,7 +1958,7 @@ namespace {
 			return;
 		}
 
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		auto allExtensions = manager.GetExtensions();
 
 		std::vector<const Extension*> matches;
@@ -2915,7 +2061,7 @@ namespace {
 			return;
 		}
 
-		const auto& manager = s_context->GetManager();
+		const auto& manager = s_plugify->GetManager();
 		auto ext1 = useId ? manager.FindExtension(FormatId(name1)) : manager.FindExtension(name1);
 		auto ext2 = useId ? manager.FindExtension(FormatId(name2)) : manager.FindExtension(name2);
 
@@ -3018,7 +2164,7 @@ namespace {
 
 // Main command handler using CLI11
 CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
-	if (!s_context || !s_context->IsInitialized()) {
+	if (!s_plugify || !s_plugify->IsInitialized()) {
 		plg::print("{}: Initialize system before use.", Colorize("Error", Colors::RED));
 		return;
 	}
@@ -3130,12 +2276,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 	unload->callback([]() { UnloadManager(); });
 	reload->callback([]() { ReloadManager(); });
 
-	plugins->callback([&pluginFilterState,
-	                   &pluginFilterLang,
-	                   &pluginShowFailed,
-	                   &pluginSortBy,
-	                   &pluginReverse,
-	                   &jsonOutput]() {
+	plugins->callback([&pluginFilterState,  &pluginFilterLang, &pluginShowFailed, &pluginSortBy, &pluginReverse, &jsonOutput]() {
 		FilterOptions filter;
 		if (!pluginFilterState.empty()) {
 			filter.states = ParseStates(ParseCsv(pluginFilterState));
@@ -3148,12 +2289,7 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 		ListPlugins(filter, ParseSortBy(pluginSortBy), pluginReverse, jsonOutput);
 	});
 
-	modules->callback([&moduleFilterState,
-	                   &moduleFilterLang,
-	                   &moduleShowFailed,
-	                   &moduleSortBy,
-	                   &moduleReverse,
-	                   &jsonOutput]() {
+	modules->callback([&moduleFilterState, &moduleFilterLang, &moduleShowFailed, &moduleSortBy, &moduleReverse, &jsonOutput]() {
 		FilterOptions filter;
 		if (!moduleFilterState.empty()) {
 			filter.states = ParseStates(ParseCsv(moduleFilterState));
@@ -3213,12 +2349,12 @@ static ConCommand plg_command("plg", plugify_callback, "Plugify control options"
 static ConCommand pkg_command("plug", plugify_callback, "Micromamba control options", 0);
 
 CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
-	if (!s_context || !s_context->IsInitialized()) {
+	if (!s_plugify || !s_plugify->IsInitialized()) {
 		plg::print("{}: Initialize system before use.", Colorize("Error", Colors::RED));
 		return;
 	}
 
-	if (s_context->GetManager().IsInitialized()) {
+	if (s_plugify->GetManager().IsInitialized()) {
 		plg::print(
 			"{}: Package operations are only allowed when plugin manager is unloaded\n"
 			"Please run 'plugify unload' first.",
@@ -3366,11 +2502,15 @@ DynLibUtils::CVTFHookAuto<&IGameSystem::ServerGamePostSimulate> _ServerGamePostS
 void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulate_t& msg) {
 	_ServerGamePostSimulate.Call(pThis, msg);
 
-	s_context->Update();
+	if (!s_plugify) {
+		return;
+	}
+
+	s_plugify->Update();
 
 	switch (s_state) {
 		case PlugifyState::Load: {
-			auto& manager = s_context->GetManager();
+			auto& manager = s_plugify->GetManager();
 			if (auto initResult = manager.Initialize()) {
 				plg::print("{}: Plugin manager was loaded.", Colorize("Success", Colors::GREEN));
 			} else {
@@ -3379,13 +2519,13 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 			break;
 		}
 		case PlugifyState::Unload: {
-			auto& manager = s_context->GetManager();
+			auto& manager = s_plugify->GetManager();
 			manager.Terminate();
 			plg::print("{}: Plugin manager was unloaded.", Colorize("Success", Colors::GREEN));
 			break;
 		}
 		case PlugifyState::Reload: {
-			auto& manager = s_context->GetManager();
+			auto& manager = s_plugify->GetManager();
 			manager.Terminate();
 			if (auto initResult = manager.Initialize()) {
 				plg::print("{}: Plugin manager was reloaded.", Colorize("Success", Colors::GREEN));
@@ -3401,194 +2541,451 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 	s_state = PlugifyState::Wait;
 }
 
-void InitializePlugify(CAppSystemDict* pThis) {
-	if (s_listener) {
-		LoggingSystem_PushLoggingState(false, false);
-		LoggingSystem_RegisterLoggingListener(s_listener.get());
-	}
+namespace {
+	bool g_saveCrushDumps = true;
+#if S2_PLATFORM_WINDOWS
+	void SaveFullDump(PEXCEPTION_POINTERS pExceptionPointers) {
+		fs::path fileName = FormatFileName("crash", "mdmp");
 
-	constexpr std::string_view interfaceName = CVAR_INTERFACE_VERSION;
-
-	for (const auto& system : pThis->m_Systems) {
-		if (system.m_pInterfaceName == interfaceName) {
-			g_pCVar = dynamic_cast<ICvar*>(system.m_pSystem);
-			break;
+		HANDLE hFile = ::CreateFileW(
+			fileName.native().c_str(),
+			GENERIC_WRITE,
+			FILE_SHARE_READ,
+			NULL,
+			CREATE_ALWAYS,
+			FILE_ATTRIBUTE_NORMAL,
+			NULL
+		);
+		if (hFile == INVALID_HANDLE_VALUE) {
+			return;
 		}
+
+		MINIDUMP_EXCEPTION_INFORMATION exceptionInfo;
+		exceptionInfo.ThreadId = GetCurrentThreadId();
+		exceptionInfo.ExceptionPointers = pExceptionPointers;
+		exceptionInfo.ClientPointers = FALSE;
+
+		::MiniDumpWriteDump(
+			::GetCurrentProcess(),
+			::GetCurrentProcessId(),
+			hFile,
+			MINIDUMP_TYPE(
+				MiniDumpWithIndirectlyReferencedMemory | MiniDumpScanMemory | MiniDumpWithFullMemory
+				| MiniDumpWithProcessThreadData | MiniDumpWithPrivateReadWriteMemory
+			),
+			pExceptionPointers ? &exceptionInfo : NULL,
+			NULL,
+			NULL
+		);
+
+		::CloseHandle(hFile);
 	}
 
-	DynLibUtils::CModule server("server");
-	if (server) {
-		auto table = server.GetVirtualTableByName("CLightQueryGameSystem");
-		DynLibUtils::CVirtualTable vtable(table);
-		_ServerGamePostSimulate.Hook(vtable, &ServerGamePostSimulate);
-	}
-
-	ConVar_Register(FCVAR_RELEASE | FCVAR_SERVER_CAN_EXECUTE | FCVAR_GAMEDLL);
-
-	fs::path baseDir(Plat_GetGameDirectory());
-	baseDir /= S2_GAME_NAME "/addons/plugify/";
-
-	std::error_code ec;
-	fs::path exePath(baseDir / "bin/" S2_BINARY "/" S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX);
-	if (!fs::exists(exePath, ec)) {
-		plg::print("{}: {} missing - {}", Colorize("Error", Colors::RED), Colorize("micromamba", Colors::CYAN), plg::as_string(exePath));
-		return;
-	}
-
-	fs::permissions(exePath,
-			fs::perms::owner_all   |  // rwx for owner
-			fs::perms::group_read  | fs::perms::group_exec |
-			fs::perms::others_read | fs::perms::others_exec,
-			fs::perm_options::replace, ec);
-
-	Config::Paths paths {
-		.baseDir = std::move(baseDir),
-		.extensionsDir = "envs",
-		.configsDir = "configs",
-		.dataDir = "data",
-		.logsDir = "logs",
-		.cacheDir = "pkgs",
+	struct MiniDumpHandlerData_t {
+		int32_t nFlags;
+		int32_t nExitCode;
+		PEXCEPTION_POINTERS pExceptionPointers;
+		// ... more
 	};
 
-	auto buildResult = Plugify::CreateBuilder()
-	                       .WithLogger(s_logger)
-	                       .WithPaths(std::move(paths))
-	                       .Build();
-
-	if (!buildResult) {
-		plg::print("{}: {}", Colorize("Error", Colors::RED), buildResult.error());
-		return;
-	}
-
-	s_context = *buildResult;
-
-	if (auto result = s_context->Initialize()) {
-		auto& manager = s_context->GetManager();
-		if (auto initResult = manager.Initialize()) {
-			plg::print("{}: Plugin manager was loaded.", Colorize("Success", Colors::GREEN));
+	void CrashpadGenericMiniDumpHandler(const MiniDumpHandlerData_t* data) {
+		if (g_saveCrushDumps) {
+			SaveFullDump(data->pExceptionPointers);
 		} else {
-			plg::print("{}: {}", Colorize("Error", Colors::RED), initResult.error());
+			CrashpadClient::DumpAndCrash(data->pExceptionPointers);
 		}
-	} else {
-		plg::print("{}: {}", Colorize("Error", Colors::RED), result.error());
 	}
+#endif
 }
+
+static constexpr auto RWX_PERMS =
+	fs::perms::owner_all |
+	fs::perms::group_read | fs::perms::group_exec |
+	fs::perms::others_read | fs::perms::others_exec;
+
+class CrashpadInitializer {
+	struct Metadata {
+		std::string url;
+		std::string handlerApp;
+		std::string databaseDir;
+		std::string metricsDir;
+		std::string logsDir;
+		std::map<std::string, std::string> annotations;
+		std::vector<std::string> arguments;
+		std::vector<std::string> attachments;
+		std::optional<bool> restartable;
+		std::optional<bool> asynchronous_start;
+		std::optional<bool> listen_console;
+		std::optional<bool> enabled;
+	};
+
+    static Result<fs::path> ValidateHandler(const fs::path& exeDir, std::string_view handlerName) {
+        fs::path handlerPath = exeDir / std::format(
+            S2_EXECUTABLE_PREFIX "{}" S2_EXECUTABLE_SUFFIX, handlerName
+        );
+
+        std::error_code ec;
+        if (!fs::exists(handlerPath, ec)) {
+            return MakeError("Crashpad handler not found: {}", plg::as_string(handlerPath));
+        }
+
+        fs::permissions(handlerPath, RWX_PERMS, fs::perm_options::replace, ec);
+        if (ec) {
+            return MakeError("Failed to set {} handler permissions: {}", handlerName, ec.message());
+        }
+
+        return handlerPath;
+    }
+
+    static Result<fs::path> EnsureDirectory(const fs::path& dirPath, std::string_view description) {
+        std::error_code ec;
+
+        if (!fs::exists(dirPath, ec)) {
+            fs::create_directories(dirPath, ec);
+            if (ec) {
+                return MakeError("Failed to create {} directory '{}': {}",
+                    description, plg::as_string(dirPath), ec.message());
+            }
+        }
+
+        fs::permissions(dirPath, RWX_PERMS, fs::perm_options::replace, ec);
+        if (ec) {
+            return MakeError("Failed to set {} directory permissions: {}", description, ec.message());
+        }
+
+        return dirPath;
+    }
+
+    static Result<std::unique_ptr<FileLoggingListener>> SetupConsoleLogging(
+        const fs::path& exeDir,
+        const fs::path& logsDir,
+        std::vector<base::FilePath>& attachments
+    ) {
+        auto logFile = exeDir / logsDir / FormatFileName("session", "log");
+
+        auto listener = FileLoggingListener::Create(logFile);
+        if (!listener) {
+            return MakeError("Failed to create console logger: {}", listener.error());
+        }
+
+        // Add console log as attachment with special prefix
+        fs::path attachmentPath = "console.log=";
+    	attachmentPath += logFile.make_preferred();
+        attachments.emplace_back(attachmentPath);
+
+        return std::move(*listener);
+    }
+
+public:
+    static Result<std::unique_ptr<CrashpadClient>> Initialize(
+        const fs::path& exeDir,
+        const fs::path& annotationsPath
+    ) {
+        // Load metadata
+        auto metadataResult = ReadJson<Metadata>(exeDir / annotationsPath);
+        if (!metadataResult) {
+            return MakeError("Failed to load metadata: {}", metadataResult.error());
+        }
+
+        const auto& metadata = *metadataResult;
+
+        // Check if crashpad is enabled
+        if (!metadata.enabled.value_or(false)) {
+            return nullptr;
+        }
+
+        // Validate handler executable
+        auto handlerResult = ValidateHandler(exeDir, metadata.handlerApp);
+        if (!handlerResult) {
+            return MakeError(std::move(handlerResult.error()));
+        }
+
+        // Setup directories
+        auto databaseResult = EnsureDirectory(exeDir / metadata.databaseDir, "database");
+        if (!databaseResult) {
+            return MakeError(std::move(databaseResult.error()));
+        }
+
+        auto metricsResult = EnsureDirectory(exeDir / metadata.metricsDir, "metrics");
+        if (!metricsResult) {
+            return MakeError(std::move(metricsResult.error()));
+        }
+
+        // Initialize database
+        base::FilePath databaseDir(*databaseResult);
+        auto database = CrashReportDatabase::Initialize(databaseDir);
+        if (!database) {
+            return MakeError("Failed to initialize crash database");
+        }
+
+        // Configure upload settings
+        database->GetSettings()->SetUploadsEnabled(!metadata.url.empty());
+
+        // Prepare attachments
+    	std::vector<base::FilePath> attachments;
+    	attachments.reserve(metadata.attachments.size());
+
+    	for (const auto& attachment : metadata.attachments) {
+    		attachments.emplace_back(exeDir / attachment);
+    	}
+
+        // Setup console logging if requested
+        if (metadata.listen_console.value_or(false)) {
+            auto listenerResult = SetupConsoleLogging(
+                exeDir, metadata.logsDir, attachments);
+            if (!listenerResult) {
+            	return MakeError(std::move(listenerResult.error()));
+            } else {
+                s_listener = std::move(*listenerResult);
+            }
+        }
+
+        // Start crash handler
+        auto client = std::make_unique<CrashpadClient>();
+        bool started = client->StartHandler(
+            base::FilePath(*handlerResult),
+            databaseDir,
+            base::FilePath(*metricsResult),
+            metadata.url,
+            metadata.annotations,
+            metadata.arguments,
+            metadata.restartable.value_or(false),
+            metadata.asynchronous_start.value_or(false),
+            attachments
+        );
+
+        if (!started) {
+            return MakeError("Failed to start Crashpad handler");
+        }
+
+        g_saveCrushDumps = false;  // Disable alternative crash handling
+
+        return client;
+    }
+};
+
+class PlugifyInitializer {
+private:
+    static constexpr std::string_view REQUIRED_INTERFACE = CVAR_INTERFACE_VERSION;
+    static constexpr std::string_view HOOK_MODULE = "server";
+    static constexpr std::string_view HOOK_CLASS = "CLightQueryGameSystem";
+
+	static Result<ICvar*> FindCVarInterface(CAppSystemDict* systems) {
+		for (const auto& system : systems->m_Systems) {
+			if (system.m_pInterfaceName == REQUIRED_INTERFACE) {
+				if (auto* pCvar = static_cast<ICvar*>(system.m_pSystem)) {
+					plg::print("{}: Found CVar interface",
+						Colorize("Info", Colors::BLUE));
+					return pCvar;
+				}
+			}
+		}
+		return MakeError("CVar interface {} not found", REQUIRED_INTERFACE);
+	}
+
+    static Result<void> InstallServerHooks() {
+        DynLibUtils::CModule server(HOOK_MODULE);
+        if (!server) {
+            return MakeError("Failed to load {} module", HOOK_MODULE);
+        }
+
+        auto table = server.GetVirtualTableByName(HOOK_CLASS);
+        if (!table) {
+            return MakeError("Virtual table {} not found", HOOK_CLASS);
+        }
+
+		DynLibUtils::CVirtualTable vtable(table);
+		_ServerGamePostSimulate.Hook(vtable, &ServerGamePostSimulate);
+
+		plg::print("{}: Server hooks installed",
+			Colorize("Info", Colors::GREEN));
+		return {};
+    }
+
+#if S2_PLATFORM_WINDOWS
+    static Result<void> SetupCrashHandler() {
+        using MiniDumpHandler = void (*)(MiniDumpHandlerData_t*);
+        using SetMiniDumpHandlerFn = void (*)(MiniDumpHandler, bool);
+
+        DynLibUtils::CModule tier0("tier0");
+        if (!tier0) {
+            return MakeError("Failed to load tier0 module");
+        }
+
+        auto SetMiniDumpHandler = tier0.GetFunctionByName("SetDefaultMiniDumpHandler")
+            .RCast<SetMiniDumpHandlerFn>();
+
+        if (!SetMiniDumpHandler) {
+            return MakeError("SetDefaultMiniDumpHandler function not found");
+        }
+
+        SetMiniDumpHandler(&CrashpadGenericMiniDumpHandler, true);
+
+        plg::print("{}: Crash handler registered",
+            Colorize("Info", Colors::GREEN));
+        return {};
+    }
+#endif
+
+    static Result<fs::path> ValidateMicromamba(const fs::path& baseDir) {
+        fs::path exePath = baseDir / "bin" / S2_BINARY /
+            (S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX);
+
+        std::error_code ec;
+        if (!fs::exists(exePath, ec)) {
+            return MakeError("Micromamba executable not found at: {}",
+                exePath.string());
+        }
+
+        fs::permissions(exePath, RWX_PERMS,
+            fs::perm_options::replace, ec);
+        if (ec) {
+            plg::print("{}: Failed to set micromamba permissions: {}",
+                Colorize("Warning", Colors::YELLOW), ec.message());
+        }
+
+        return exePath;
+    }
+
+    static Config::Paths BuildPaths(const fs::path& baseDir) {
+        return {
+            .baseDir = baseDir,
+            .extensionsDir = "envs",
+            .configsDir = "configs",
+            .dataDir = "data",
+            .logsDir = "logs",
+            .cacheDir = "pkgs",
+        };
+    }
+
+    static Result<std::shared_ptr<Plugify>> CreatePlugifyContext(
+        const fs::path& baseDir
+    ) {
+		// Build paths
+		auto paths = BuildPaths(baseDir);
+
+        // Create context
+        auto buildResult = Plugify::CreateBuilder()
+            .WithLogger(s_logger)
+            .WithPaths(std::move(paths))
+            .Build();
+
+        if (!buildResult) {
+            return MakeError("Failed to create Plugify context: {}",
+                buildResult.error());
+        }
+
+        // Initialize context
+        auto context = std::move(*buildResult);
+        if (auto result = context->Initialize(); !result) {
+            return MakeError("Failed to initialize context: {}",
+                result.error());
+        }
+
+        // Initialize manager
+        auto& manager = context->GetManager();
+        if (auto result = manager.Initialize(); !result) {
+            return MakeError("Failed to initialize plugin manager: {}",
+                result.error());
+        }
+
+        plg::print("{}: Plugify initialized successfully",
+            Colorize("Success", Colors::GREEN));
+
+        return context;
+    }
+
+public:
+    static Result<std::shared_ptr<Plugify>> Initialize(CAppSystemDict* systems) {
+        // Setup logging if listener exists
+    	if (s_listener) {
+    		LoggingSystem_PushLoggingState(false, false);
+    		LoggingSystem_RegisterLoggingListener(s_listener.get());
+    	}
+
+    	// Notify about crashpad
+    	plg::print("{}: Crashpad {} in configuration",
+					Colorize("Info", Colors::BLUE), Colorize(s_crashpad ? "enabled" : "disabled", Colors::MAGENTA));
+
+        // Find CVar interface
+		if (auto cvarResult = FindCVarInterface(systems); !cvarResult) {
+            plg::print("{}: {}",
+                Colorize("Warning", Colors::YELLOW), cvarResult.error());
+            // Non-fatal: continue without CVar
+        } else {
+            g_pCVar = *cvarResult;
+        }
+
+        // Install server hooks
+        if (auto hookResult = InstallServerHooks(); !hookResult) {
+            plg::print("{}: {}",
+                Colorize("Warning", Colors::YELLOW), hookResult.error());
+            // Non-fatal: continue without hooks
+        }
+
+#if S2_PLATFORM_WINDOWS
+        // Setup crash handler
+        if (auto crashResult = SetupCrashHandler(); !crashResult) {
+            plg::print("{}: {}",
+                Colorize("Warning", Colors::YELLOW), crashResult.error());
+            // Non-fatal: continue without crash handler
+        }
+#endif
+
+        // Register ConVars
+        ConVar_Register(FCVAR_RELEASE | FCVAR_SERVER_CAN_EXECUTE | FCVAR_GAMEDLL);
+
+        // Build base directory path
+        fs::path baseDir(Plat_GetGameDirectory());
+        baseDir /= S2_GAME_NAME "/addons/plugify/";
+
+    	// Validate micromamba
+		if (auto mambaResult = ValidateMicromamba(baseDir); !mambaResult) {
+    		return MakeError(std::move(mambaResult.error()));
+    	}
+
+        // Create and initialize Plugify context
+    	return CreatePlugifyContext(baseDir);
+    }
+};
 
 using OnAppSystemLoadedFn = void (*)(CAppSystemDict*);
 DynLibUtils::CVTFHookAuto<&CAppSystemDict::OnAppSystemLoaded> _OnAppSystemLoaded;
-std::set<std::string> g_loadList;
+std::unordered_set<std::string> g_loadList;
 
 void OnAppSystemLoaded(CAppSystemDict* pThis) {
 	_OnAppSystemLoaded.Call(pThis);
 
-	if (s_context) {
+	if (s_plugify) {
 		return;
+	}
+
+	if (g_loadList.empty()) {
+		g_loadList.reserve(static_cast<size_t>(pThis->m_Modules.Count()));
 	}
 
 	constexpr std::string_view moduleName = S2_GAME_START;
 
 	for (const auto& module : pThis->m_Modules) {
 		if (module.m_pModuleName) {
-			auto [_, result] = g_loadList.insert(module.m_pModuleName);
-			if (result) {
+			if (g_loadList.insert(module.m_pModuleName).second) {
 				if (module.m_pModuleName == moduleName) {
-					InitializePlugify(pThis);
+					auto result = PlugifyInitializer::Initialize(pThis);
+					if (!result) {
+						plg::print("{}: Plugify initialization failed: {}",
+							Colorize("Error", Colors::RED), result.error());
+
+						// Optionally: decide if this should be fatal
+						// throw std::runtime_error(result.error());
+						return;
+					}
+
+					s_plugify = std::move(*result);
+					break;
 				}
 			}
 		}
 	}
-}
-
-using namespace plugify;
-using namespace crashpad;
-
-struct Metadata {
-	std::string url;
-	std::string handlerApp;
-	std::string databaseDir;
-	std::string metricsDir;
-	std::string logsDir;
-	std::map<std::string, std::string> annotations;
-	std::vector<std::string> arguments;
-	std::vector<std::string> attachments;
-	std::optional<bool> restartable;
-	std::optional<bool> asynchronous_start;
-	std::optional<bool> listen_console;
-	std::optional<bool> enabled;
-};
-
-Result<void> InitializeCrashpad(const fs::path& exeDir, const fs::path& annotationsPath) {
-	auto metadata = ReadJson<Metadata>(exeDir / annotationsPath);
-	if (!metadata) {
-		return MakeError(std::move(metadata.error()));
-	}
-
-	if (!metadata->enabled.value_or(false)) {
-		return {};
-	}
-
-	std::error_code ec;
-	fs::path exePath(exeDir / std::format(S2_EXECUTABLE_PREFIX "{}" S2_EXECUTABLE_SUFFIX, metadata->handlerApp));
-	if (!fs::exists(exePath, ec)) {
-		plg::print("{}: {} missing - {}", Colorize("Error", Colors::RED), Colorize("crashpad_handler", Colors::CYAN), plg::as_string(exePath));
-		return {};
-	}
-
-	fs::permissions(exePath,
-			fs::perms::owner_all   |  // rwx for owner
-			fs::perms::group_read  | fs::perms::group_exec |
-			fs::perms::others_read | fs::perms::others_exec,
-			fs::perm_options::replace, ec);
-
-	base::FilePath handlerApp(exePath);
-	base::FilePath databaseDir(exeDir / metadata->databaseDir);
-	base::FilePath metricsDir(exeDir / metadata->metricsDir);
-
-	std::unique_ptr<CrashReportDatabase> database = CrashReportDatabase::Initialize(databaseDir);
-
-	// File paths of attachments to uploaded with minidump file at crash time - default upload limit
-	// is 2MB
-	std::vector<base::FilePath> attachments;
-	attachments.reserve(metadata->attachments.size());
-	for (const auto& attachment : metadata->attachments) {
-		attachments.emplace_back(exeDir / attachment);
-	}
-
-	// Enable automated crash uploads
-	Settings* settings = database->GetSettings();
-	settings->SetUploadsEnabled(!metadata->url.empty());
-
-	if (metadata->listen_console.value_or(false)) {
-		auto now = std::chrono::system_clock::now();
-		auto seconds = std::chrono::floor<std::chrono::seconds>(now);
-		std::chrono::zoned_time zt{ std::chrono::current_zone(), seconds };
-		auto loggingPath = exeDir / metadata->logsDir / std::format("session_{:%Y%m%d_%H%M%S}.log", zt);
-		auto listener = FileLoggingListener::Create(loggingPath);
-		if (!listener) {
-			return MakeError(std::move(listener.error()));
-		}
-		s_listener = std::move(*listener);
-
-		fs::path dest = "console.log=";
-		dest += loggingPath;
-		attachments.emplace_back(dest);
-	}
-
-	// Start crash handler
-	auto* client = new CrashpadClient();
-	client->StartHandler(
-	    handlerApp,
-	    databaseDir,
-	    metricsDir,
-	    metadata->url,
-	    metadata->annotations,
-	    metadata->arguments,
-	    metadata->restartable.value_or(false),
-	    metadata->asynchronous_start.value_or(false),
-	    attachments
-	);
-
-	return {};
 }
 
 std::optional<fs::path> ExecutablePath() {
@@ -3596,10 +2993,10 @@ std::optional<fs::path> ExecutablePath() {
 
 	while (true) {
 #if S2_PLATFORM_WINDOWS
-		size_t len = GetModuleFileNameA(nullptr, execPath.data(), static_cast<DWORD>(execPath.length()));
+		size_t len = ::GetModuleFileNameA(nullptr, execPath.data(), static_cast<DWORD>(execPath.length()));
 		if (len == 0)
 #elif S2_PLATFORM_LINUX
-		ssize_t len = readlink("/proc/self/exe", execPath.data(), execPath.length());
+		ssize_t len = ::readlink("/proc/self/exe", execPath.data(), execPath.length());
 		if (len == -1)
 #endif
 		{
@@ -3616,12 +3013,6 @@ std::optional<fs::path> ExecutablePath() {
 	return fs::path(std::move(execPath)).parent_path();
 }
 
-#if S2_PLATFORM_WINDOWS
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
-
 int main(int argc, char* argv[]) {
 	auto binary_path = ExecutablePath().value_or(fs::current_path());
 
@@ -3630,14 +3021,18 @@ int main(int argc, char* argv[]) {
 		binary_path /= "bin/" S2_BINARY;
 	}
 
+	if (!plg::is_debugger_present()) {
+		auto result = CrashpadInitializer::Initialize(binary_path, "crashpad.jsonc");
+		if (!result) {
+			std::println(std::cerr, "Crashpad error: {}", result.error());
+			return 1;
+		}
+
+		s_crashpad = std::move(*result);
+	}
+
 	auto engine_path = binary_path / S2_LIBRARY_PREFIX "engine2" S2_LIBRARY_SUFFIX;
 	auto parent_path = binary_path.generic_string();
-
-	if (!plg::is_debugger_present()) {
-		if (auto result = InitializeCrashpad(binary_path, "crashpad.jsonc"); !result) {
-			std::cerr << "Crashpad error: " << result.error() << std::endl;
-		}
-	}
 
 #if S2_PLATFORM_WINDOWS
 	int flags = LOAD_WITH_ALTERED_SEARCH_PATH;
@@ -3648,11 +3043,11 @@ int main(int argc, char* argv[]) {
 	DynLibUtils::CModule engine{};
 	engine.LoadFromPath(plg::as_string(engine_path), flags);
 	if (!engine) {
-		std::cerr << "Launcher error: " << engine.GetLastError() << std::endl;
+		std::println(std::cerr, "Launcher error: {} - {}", engine.GetLastError(), plg::as_string(engine_path));
 		return 1;
 	}
 
-	s_logger = std::make_shared<Logger>("plugify");
+	s_logger = std::make_shared<ConsoleLoggger>("plugify");
 	s_logger->SetLogLevel(Severity::Info);
 
 	auto table = engine.GetVirtualTableByName("CMaterialSystem2AppSystemDict");
@@ -3679,7 +3074,7 @@ int main(int argc, char* argv[]) {
 	_ServerGamePostSimulate.Unhook();
 	_OnAppSystemLoaded.Unhook();
 
-	s_context.reset();
+	s_plugify.reset();
 	s_logger.reset();
 	s_listener.reset();
 
