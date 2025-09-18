@@ -10,11 +10,9 @@
 #include <windows.h>
 #include <dbghelp.h>
 #undef FormatMessage
-#define PLUGIFY_PLATFORM_WINDOWS 1
 #else
 #include <dlfcn.h>
 #include <cstdlib>
-#define PLUGIFY_PLATFORM_LINUX 1
 #endif
 
 #include <client/crash_report_database.h>
@@ -296,12 +294,7 @@ protected:
 
 		return std::format(
 		    "[{:%F %T}.{:03d}] [{}] [{}:{}] {}\n",
-		    seconds,  // %F = YYYY-MM-DD, %T = HH:MM:SS
-		    static_cast<int>(ms.count()),
-		    plg::enum_to_string(severity),
-		    loc.file_name(),
-		    loc.line(),
-		    message
+			"[{:%F %T}.{:03d}] [{}] [{}:{}] {}\n",
 		);
 	}
 
@@ -360,7 +353,6 @@ public:
 			// Using jthread for automatic joining and stop_token support
 			_worker_thread = std::jthread([this](std::stop_token stop_token) {
 				ProcessQueue(std::move(stop_token));
-			});
 		}
 	}
 
@@ -370,7 +362,6 @@ public:
 
 	void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
 		if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0) {
-			return;
 		}
 
 		// Using string_view and removing trailing newline
@@ -380,65 +371,62 @@ public:
 		} else if (message.find_first_not_of('\n') == std::string_view::npos) {
 			return;  // All newlines
 		}
+	}
 
-		if (message.empty()) {
-			return;
 		}
+			std::string_view message = pMessage;
+				return;
 
-		// C++23 chrono improvements with zoned_time
-		auto now = std::chrono::system_clock::now();
 		auto seconds = std::chrono::floor<std::chrono::seconds>(now);
 
 		// More robust timezone handling
 		std::string formatted_message;
-		try {
-			std::chrono::zoned_time zt{ std::chrono::current_zone(), seconds };
-			formatted_message = std::format("[{:%Y%m%d_%H%M%S}] {}", zt, message);
-		} catch (const std::exception&) {
-			// Fallback to UTC if local timezone fails
-			// auto time_t = std::chrono::system_clock::to_time_t(seconds);
-			formatted_message = std::format(
 			    "[{:%Y%m%d_%H%M%S}] {}",
 			    std::chrono::utc_clock::from_sys(seconds),
 			    message
 			);
 		}
+				formatted_message = std::format("[{:%Y%m%d_%H%M%S}] {}", zt, message);
+				// auto time_t = std::chrono::system_clock::to_time_t(seconds);
+				formatted_message = std::format(
 
 		if (_async) {
 			std::lock_guard lock(_queue_mutex);
 			_message_queue.emplace(std::move(formatted_message));
 			_condition.notify_one();
-		} else {
-			Write(formatted_message);
+			if (_async) {
+				{
+					std::lock_guard lock(_queue_mutex);
+					_message_queue.emplace(std::move(formatted_message));
+				}
+				_condition.notify_one();
+			} else {
+				Write(formatted_message);
+			}
 		}
 	}
 
 private:
-	const bool _async;
-	mutable std::mutex _queue_mutex;
+	bool _async;
+	std::atomic<bool> _running;
+	std::mutex _queue_mutex;
 	std::queue<std::string> _message_queue;
 	std::condition_variable _condition;
-	std::jthread _worker_thread;  // C++23: jthread for automatic management
-	mutable std::mutex _file_mutex;
+	std::thread _worker_thread;
+	std::mutex _file_mutex;
 	std::ofstream _file;
 
 	void Write(const std::string& message) {
 		std::lock_guard lock(_file_mutex);
-		// Using std::print for more efficient output (C++23)
 		std::println(_file, "{}", message);
-		_file.flush();  // Consider removing for better performance
+		_file.flush();
 	}
 
-	void ProcessQueue(std::stop_token stop_token) {
-		while (!stop_token.stop_requested()) {
+	void ProcessQueue() {
+		while (_running) {
 			std::unique_lock lock(_queue_mutex);
+			_condition.wait(lock, [this] { return !_message_queue.empty() || !_running; });
 
-			// C++23: Using stop_callback for clean shutdown
-			_condition.wait(lock, [this, &stop_token] {
-				return !_message_queue.empty() || stop_token.stop_requested();
-			});
-
-			// Process all queued messages
 			while (!_message_queue.empty()) {
 				auto message = std::move(_message_queue.front());
 				_message_queue.pop();
@@ -447,12 +435,13 @@ private:
 				lock.lock();
 			}
 		}
+	}
 
-		// Drain remaining messages before stopping
-		std::lock_guard lock(_queue_mutex);
-		while (!_message_queue.empty()) {
-			Write(_message_queue.front());
-			_message_queue.pop();
+	void Stop() {
+		_running = false;
+		_condition.notify_one();
+		if (_worker_thread.joinable()) {
+			_worker_thread.join();
 		}
 	}
 };
@@ -467,16 +456,16 @@ PlugifyState s_state;
 
 namespace plg {
 	/*PLUGIFY_FORCE_INLINE void print(const char* msg) {
-	    s_logger->Log(msg, S2Colors::WHITE, false);
+		s_logger->Log(msg, S2Colors::WHITE, false);
 	}
 
 	PLUGIFY_FORCE_INLINE void print(std::string&& msg) {
-	    s_logger->Log(std::move(msg), false);
+		s_logger->Log(std::move(msg), false);
 	}
 
 	template<typename... Args>
 	PLUGIFY_FORCE_INLINE void print(std::format_string<Args...> fmt, Args&&... args) {
-	    s_logger->Log(std::format(fmt, std::forward<Args>(args)...), false);
+		s_logger->Log(std::format(fmt, std::forward<Args>(args)...), false);
 	}*/
 
 	PLUGIFY_FORCE_INLINE void print(const char* msg) {
@@ -499,12 +488,13 @@ namespace {
 
 	template <typename T>
 	Result<T> ReadJson(const fs::path& path) {
+		errno = 0;
 		std::ifstream file(path, std::ios::binary);
 		if (!file) {
 			return MakeError(
-			    "Failed to read json file: {} - {}",
-			    plg::as_string(path),
-			    std::strerror(errno)
+				"Failed to read json file: {} - {}",
+				plg::as_string(path),
+				std::strerror(errno)
 			);
 		}
 		auto text = std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
@@ -562,12 +552,14 @@ namespace {
 	};
 
 	// Unicode (original)
-	inline constexpr Glyphs UnicodeGlyphs{ "✓", "✗", "⚠", "○", "●", "⋯", "→",
-		                                   "#", "?", "ℹ", "=", "≠", "⚙" };
+	inline constexpr Glyphs UnicodeGlyphs{
+		"✓", "✗", "⚠", "○", "●", "⋯", "→", "#", "?", "ℹ", "=", "≠", "⚙",
+	};
 
 	// Plain ASCII fallback
-	inline constexpr Glyphs AsciiGlyphs{ "v", "x", "!", "o", "*",  "...", "->",
-		                                 "#", "?", "i", "=", "!=", ">>" };
+	inline constexpr Glyphs AsciiGlyphs{
+		"v", "x", "!", "o", "*", "...", "->", "#", "?", "i", "=", "!=", ">>",
+	};
 
 	// selection strategy examples:
 
@@ -683,10 +675,13 @@ namespace {
 		using namespace std::chrono;
 		auto now = system_clock::now();
 		auto seconds = floor<std::chrono::seconds>(now);
-		auto ms = duration_cast<milliseconds>(now - seconds); // %F = YYYY-MM-DD, %T = HH:MM:SS
+		auto ms = duration_cast<milliseconds>(now - seconds);  // %F = YYYY-MM-DD, %T = HH:MM:SS
 		std::string timestamp = std::format("{:%F-%T}", seconds, static_cast<int>(ms.count()));
-		for (auto& c : timestamp)
-			if (c == ':') c = '-';
+		for (auto& c : timestamp) {
+			if (c == ':') {
+				c = '-';
+			}
+		}
 		return std::format("{}-{}.{}", type, timestamp, format);
 	}
 
@@ -811,7 +806,8 @@ namespace {
 	}
 
 	// Filter extensions based on criteria
-	std::vector<const Extension*> FilterExtensions(const std::vector<const Extension*>& extensions, const FilterOptions& filter) {
+	std::vector<const Extension*>
+	FilterExtensions(const std::vector<const Extension*>& extensions, const FilterOptions& filter) {
 		std::vector<const Extension*> result;
 
 		for (const auto& ext : extensions) {
@@ -906,15 +902,15 @@ namespace {
 	std::string GetVersionString() {
 		constexpr auto year = std::string_view(__DATE__).substr(7, 4);
 		return std::format(
-		    ""
-		    R"(      ____)" "\n"
-		    R"( ____|    \         Plugify {})" "\n"
-		    R"((____|     `._____  Copyright (C) 2023-{} Untrusted Modders Team)" "\n"
-		    R"( ____|       _|___)" "\n"
-		    R"((____|     .'       This program may be freely redistributed under)" "\n"
-		    R"(     |____/         the terms of the MIT License.)",
-		    s_plugify->GetVersion(),
-		    year
+			""
+			R"(      ____)" "\n"
+			R"( ____|    \         Plugify {})" "\n"
+			R"((____|     `._____  Copyright (C) 2023-{} Untrusted Modders Team)" "\n"
+			R"( ____|       _|___)" "\n"
+			R"((____|     .'       This program may be freely redistributed under)" "\n"
+			R"(     |____/         the terms of the MIT License.)",
+			s_plugify->GetVersion(),
+			year
 		);
 	}
 
@@ -1528,10 +1524,12 @@ namespace {
 		);
 
 		// Show timing for different operations
-		ExtensionState operations[] = { ExtensionState::Parsing,
-			                            ExtensionState::Resolving,
-			                            ExtensionState::Loading,
-			                            ExtensionState::Starting };
+		ExtensionState operations[] = {
+			ExtensionState::Parsing,
+			ExtensionState::Resolving,
+			ExtensionState::Loading,
+			ExtensionState::Starting,
+		};
 
 		for (const auto& op : operations) {
 			try {
@@ -1784,10 +1782,12 @@ namespace {
 		);
 
 		// Show timing for different operations
-		ExtensionState operations[] = { ExtensionState::Parsing,
-			                            ExtensionState::Resolving,
-			                            ExtensionState::Loading,
-			                            ExtensionState::Starting };
+		ExtensionState operations[] = {
+			ExtensionState::Parsing,
+			ExtensionState::Resolving,
+			ExtensionState::Loading,
+			ExtensionState::Starting,
+		};
 
 		for (const auto& op : operations) {
 			try {
@@ -2598,10 +2598,8 @@ namespace {
 #endif
 }
 
-static constexpr auto RWX_PERMS =
-	fs::perms::owner_all |
-	fs::perms::group_read | fs::perms::group_exec |
-	fs::perms::others_read | fs::perms::others_exec;
+static constexpr auto RWX_PERMS = fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec
+                                  | fs::perms::others_read | fs::perms::others_exec;
 
 class CrashpadInitializer {
 	struct Metadata {
@@ -2619,163 +2617,162 @@ class CrashpadInitializer {
 		std::optional<bool> enabled;
 	};
 
-    static Result<fs::path> ValidateHandler(const fs::path& exeDir, std::string_view handlerName) {
-        fs::path handlerPath = exeDir / std::format(
-            S2_EXECUTABLE_PREFIX "{}" S2_EXECUTABLE_SUFFIX, handlerName
-        );
+	static Result<fs::path> ValidateHandler(const fs::path& exeDir, std::string_view handlerName) {
+		fs::path handlerPath = exeDir
+		                       / std::format(S2_EXECUTABLE_PREFIX "{}" S2_EXECUTABLE_SUFFIX, handlerName);
 
-        std::error_code ec;
-        if (!fs::exists(handlerPath, ec)) {
-            return MakeError("Crashpad handler not found: {}", plg::as_string(handlerPath));
-        }
+		std::error_code ec;
+		if (!fs::exists(handlerPath, ec)) {
+			return MakeError("Crashpad handler not found: {}", plg::as_string(handlerPath));
+		}
 
-        fs::permissions(handlerPath, RWX_PERMS, fs::perm_options::replace, ec);
-        if (ec) {
-            return MakeError("Failed to set {} handler permissions: {}", handlerName, ec.message());
-        }
+		fs::permissions(handlerPath, RWX_PERMS, fs::perm_options::replace, ec);
+		if (ec) {
+			return MakeError("Failed to set {} handler permissions: {}", handlerName, ec.message());
+		}
 
-        return handlerPath;
-    }
+		return handlerPath;
+	}
 
-    static Result<fs::path> EnsureDirectory(const fs::path& dirPath, std::string_view description) {
-        std::error_code ec;
+	static Result<fs::path> EnsureDirectory(const fs::path& dirPath, std::string_view description) {
+		std::error_code ec;
 
-        if (!fs::exists(dirPath, ec)) {
-            fs::create_directories(dirPath, ec);
-            if (ec) {
-                return MakeError("Failed to create {} directory '{}': {}",
-                    description, plg::as_string(dirPath), ec.message());
-            }
-        }
+		if (!fs::exists(dirPath, ec)) {
+			fs::create_directories(dirPath, ec);
+			if (ec) {
+				return MakeError(
+				    "Failed to create {} directory '{}': {}",
+				    description,
+				    plg::as_string(dirPath),
+				    ec.message()
+				);
+			}
+		}
 
-        fs::permissions(dirPath, RWX_PERMS, fs::perm_options::replace, ec);
-        if (ec) {
-            return MakeError("Failed to set {} directory permissions: {}", description, ec.message());
-        }
+		fs::permissions(dirPath, RWX_PERMS, fs::perm_options::replace, ec);
+		if (ec) {
+			return MakeError("Failed to set {} directory permissions: {}", description, ec.message());
+		}
 
-        return dirPath;
-    }
+		return dirPath;
+	}
 
-    static Result<std::unique_ptr<FileLoggingListener>> SetupConsoleLogging(
-        const fs::path& exeDir,
-        const fs::path& logsDir,
-        std::vector<base::FilePath>& attachments
-    ) {
-        auto logFile = exeDir / logsDir / FormatFileName("session", "log");
+	static Result<std::unique_ptr<FileLoggingListener>> SetupConsoleLogging(
+	    const fs::path& exeDir,
+	    const fs::path& logsDir,
+	    std::vector<base::FilePath>& attachments
+	) {
+		auto logFile = exeDir / logsDir / FormatFileName("session", "log");
 
-        auto listener = FileLoggingListener::Create(logFile);
-        if (!listener) {
-            return MakeError("Failed to create console logger: {}", listener.error());
-        }
+		auto listener = FileLoggingListener::Create(logFile);
+		if (!listener) {
+			return MakeError("Failed to create console logger: {}", listener.error());
+		}
 
-        // Add console log as attachment with special prefix
-        fs::path attachmentPath = "console.log=";
-    	attachmentPath += logFile.make_preferred();
-        attachments.emplace_back(attachmentPath);
+		// Add console log as attachment with special prefix
+		fs::path attachmentPath = "console.log=";
+		attachmentPath += logFile.make_preferred();
+		attachments.emplace_back(attachmentPath);
 
-        return std::move(*listener);
-    }
+		return std::move(*listener);
+	}
 
 public:
-    static Result<std::unique_ptr<CrashpadClient>> Initialize(
-        const fs::path& exeDir,
-        const fs::path& annotationsPath
-    ) {
-        // Load metadata
-        auto metadataResult = ReadJson<Metadata>(exeDir / annotationsPath);
-        if (!metadataResult) {
-            return MakeError("Failed to load metadata: {}", metadataResult.error());
-        }
+	static Result<std::unique_ptr<CrashpadClient>>
+	Initialize(const fs::path& exeDir, const fs::path& annotationsPath) {
+		// Load metadata
+		auto metadataResult = ReadJson<Metadata>(exeDir / annotationsPath);
+		if (!metadataResult) {
+			return MakeError("Failed to load metadata: {}", metadataResult.error());
+		}
 
-        const auto& metadata = *metadataResult;
+		const auto& metadata = *metadataResult;
 
-        // Check if crashpad is enabled
-        if (!metadata.enabled.value_or(false)) {
-            return nullptr;
-        }
+		// Check if crashpad is enabled
+		if (!metadata.enabled.value_or(false)) {
+			return nullptr;
+		}
 
-        // Validate handler executable
-        auto handlerResult = ValidateHandler(exeDir, metadata.handlerApp);
-        if (!handlerResult) {
-            return MakeError(std::move(handlerResult.error()));
-        }
+		// Validate handler executable
+		auto handlerResult = ValidateHandler(exeDir, metadata.handlerApp);
+		if (!handlerResult) {
+			return MakeError(std::move(handlerResult.error()));
+		}
 
-        // Setup directories
-        auto databaseResult = EnsureDirectory(exeDir / metadata.databaseDir, "database");
-        if (!databaseResult) {
-            return MakeError(std::move(databaseResult.error()));
-        }
+		// Setup directories
+		auto databaseResult = EnsureDirectory(exeDir / metadata.databaseDir, "database");
+		if (!databaseResult) {
+			return MakeError(std::move(databaseResult.error()));
+		}
 
-        auto metricsResult = EnsureDirectory(exeDir / metadata.metricsDir, "metrics");
-        if (!metricsResult) {
-            return MakeError(std::move(metricsResult.error()));
-        }
+		auto metricsResult = EnsureDirectory(exeDir / metadata.metricsDir, "metrics");
+		if (!metricsResult) {
+			return MakeError(std::move(metricsResult.error()));
+		}
 
-        // Initialize database
-        base::FilePath databaseDir(*databaseResult);
-        auto database = CrashReportDatabase::Initialize(databaseDir);
-        if (!database) {
-            return MakeError("Failed to initialize crash database");
-        }
+		// Initialize database
+		base::FilePath databaseDir(*databaseResult);
+		auto database = CrashReportDatabase::Initialize(databaseDir);
+		if (!database) {
+			return MakeError("Failed to initialize crash database");
+		}
 
-        // Configure upload settings
-        database->GetSettings()->SetUploadsEnabled(!metadata.url.empty());
+		// Configure upload settings
+		database->GetSettings()->SetUploadsEnabled(!metadata.url.empty());
 
-        // Prepare attachments
-    	std::vector<base::FilePath> attachments;
-    	attachments.reserve(metadata.attachments.size());
+		// Prepare attachments
+		std::vector<base::FilePath> attachments;
+		attachments.reserve(metadata.attachments.size());
 
-    	for (const auto& attachment : metadata.attachments) {
-    		attachments.emplace_back(exeDir / attachment);
-    	}
+		for (const auto& attachment : metadata.attachments) {
+			attachments.emplace_back(exeDir / attachment);
+		}
 
-        // Setup console logging if requested
-        if (metadata.listen_console.value_or(false)) {
-            auto listenerResult = SetupConsoleLogging(
-                exeDir, metadata.logsDir, attachments);
-            if (!listenerResult) {
-            	return MakeError(std::move(listenerResult.error()));
-            } else {
-                s_listener = std::move(*listenerResult);
-            }
-        }
+		// Setup console logging if requested
+		if (metadata.listen_console.value_or(false)) {
+			auto listenerResult = SetupConsoleLogging(exeDir, metadata.logsDir, attachments);
+			if (!listenerResult) {
+				return MakeError(std::move(listenerResult.error()));
+			} else {
+				s_listener = std::move(*listenerResult);
+			}
+		}
 
-        // Start crash handler
-        auto client = std::make_unique<CrashpadClient>();
-        bool started = client->StartHandler(
-            base::FilePath(*handlerResult),
-            databaseDir,
-            base::FilePath(*metricsResult),
-            metadata.url,
-            metadata.annotations,
-            metadata.arguments,
-            metadata.restartable.value_or(false),
-            metadata.asynchronous_start.value_or(false),
-            attachments
-        );
+		// Start crash handler
+		auto client = std::make_unique<CrashpadClient>();
+		bool started = client->StartHandler(
+		    base::FilePath(*handlerResult),
+		    databaseDir,
+		    base::FilePath(*metricsResult),
+		    metadata.url,
+		    metadata.annotations,
+		    metadata.arguments,
+		    metadata.restartable.value_or(false),
+		    metadata.asynchronous_start.value_or(false),
+		    attachments
+		);
 
-        if (!started) {
-            return MakeError("Failed to start Crashpad handler");
-        }
+		if (!started) {
+			return MakeError("Failed to start Crashpad handler");
+		}
 
-        g_saveCrushDumps = false;  // Disable alternative crash handling
+		g_saveCrushDumps = false;  // Disable alternative crash handling
 
-        return client;
-    }
+		return client;
+	}
 };
 
 class PlugifyInitializer {
 private:
-    static constexpr std::string_view REQUIRED_INTERFACE = CVAR_INTERFACE_VERSION;
-    static constexpr std::string_view HOOK_MODULE = "server";
-    static constexpr std::string_view HOOK_CLASS = "CLightQueryGameSystem";
+	static constexpr std::string_view REQUIRED_INTERFACE = CVAR_INTERFACE_VERSION;
+	static constexpr std::string_view HOOK_MODULE = "server";
+	static constexpr std::string_view HOOK_CLASS = "CLightQueryGameSystem";
 
 	static Result<ICvar*> FindCVarInterface(CAppSystemDict* systems) {
 		for (const auto& system : systems->m_Systems) {
 			if (system.m_pInterfaceName == REQUIRED_INTERFACE) {
 				if (auto* pCvar = static_cast<ICvar*>(system.m_pSystem)) {
-					plg::print("{}: Found CVar interface",
-						Colorize("Info", Colors::BLUE));
+					plg::print("{}: Found CVar interface", Colorize("Info", Colors::BLUE));
 					return pCvar;
 				}
 			}
@@ -2783,170 +2780,163 @@ private:
 		return MakeError("CVar interface {} not found", REQUIRED_INTERFACE);
 	}
 
-    static Result<void> InstallServerHooks() {
-        DynLibUtils::CModule server(HOOK_MODULE);
-        if (!server) {
-            return MakeError("Failed to load {} module", HOOK_MODULE);
-        }
+	static Result<void> InstallServerHooks() {
+		DynLibUtils::CModule server(HOOK_MODULE);
+		if (!server) {
+			return MakeError("Failed to load {} module", HOOK_MODULE);
+		}
 
-        auto table = server.GetVirtualTableByName(HOOK_CLASS);
-        if (!table) {
-            return MakeError("Virtual table {} not found", HOOK_CLASS);
-        }
+		auto table = server.GetVirtualTableByName(HOOK_CLASS);
+		if (!table) {
+			return MakeError("Virtual table {} not found", HOOK_CLASS);
+		}
 
 		DynLibUtils::CVirtualTable vtable(table);
 		_ServerGamePostSimulate.Hook(vtable, &ServerGamePostSimulate);
 
-		plg::print("{}: Server hooks installed",
-			Colorize("Info", Colors::GREEN));
+		plg::print("{}: Server hooks installed", Colorize("Info", Colors::GREEN));
 		return {};
-    }
+	}
 
 #if S2_PLATFORM_WINDOWS
-    static Result<void> SetupCrashHandler() {
-        using MiniDumpHandler = void (*)(MiniDumpHandlerData_t*);
-        using SetMiniDumpHandlerFn = void (*)(MiniDumpHandler, bool);
+	static Result<void> SetupCrashHandler() {
+		using MiniDumpHandler = void (*)(MiniDumpHandlerData_t*);
+		using SetMiniDumpHandlerFn = void (*)(MiniDumpHandler, bool);
 
-        DynLibUtils::CModule tier0("tier0");
-        if (!tier0) {
-            return MakeError("Failed to load tier0 module");
-        }
+		DynLibUtils::CModule tier0("tier0");
+		if (!tier0) {
+			return MakeError("Failed to load tier0 module");
+		}
 
-        auto SetMiniDumpHandler = tier0.GetFunctionByName("SetDefaultMiniDumpHandler")
-            .RCast<SetMiniDumpHandlerFn>();
+		auto SetMiniDumpHandler = tier0.GetFunctionByName("SetDefaultMiniDumpHandler")
+		                              .RCast<SetMiniDumpHandlerFn>();
 
-        if (!SetMiniDumpHandler) {
-            return MakeError("SetDefaultMiniDumpHandler function not found");
-        }
+		if (!SetMiniDumpHandler) {
+			return MakeError("SetDefaultMiniDumpHandler function not found");
+		}
 
-        SetMiniDumpHandler(&CrashpadGenericMiniDumpHandler, true);
+		SetMiniDumpHandler(&CrashpadGenericMiniDumpHandler, true);
 
-        plg::print("{}: Crash handler registered",
-            Colorize("Info", Colors::GREEN));
-        return {};
-    }
+		plg::print("{}: Crash handler registered", Colorize("Info", Colors::GREEN));
+		return {};
+	}
 #endif
 
-    static Result<fs::path> ValidateMicromamba(const fs::path& baseDir) {
-        fs::path exePath = baseDir / "bin" / S2_BINARY /
-            (S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX);
+	static Result<fs::path> ValidateMicromamba(const fs::path& baseDir) {
+		fs::path exePath = baseDir / "bin" / S2_BINARY
+		                   / (S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX);
 
-        std::error_code ec;
-        if (!fs::exists(exePath, ec)) {
-            return MakeError("Micromamba executable not found at: {}",
-                exePath.string());
-        }
+		std::error_code ec;
+		if (!fs::exists(exePath, ec)) {
+			return MakeError("Micromamba executable not found at: {}", exePath.string());
+		}
 
-        fs::permissions(exePath, RWX_PERMS,
-            fs::perm_options::replace, ec);
-        if (ec) {
-            plg::print("{}: Failed to set micromamba permissions: {}",
-                Colorize("Warning", Colors::YELLOW), ec.message());
-        }
+		fs::permissions(exePath, RWX_PERMS, fs::perm_options::replace, ec);
+		if (ec) {
+			plg::print(
+			    "{}: Failed to set micromamba permissions: {}",
+			    Colorize("Warning", Colors::YELLOW),
+			    ec.message()
+			);
+		}
 
-        return exePath;
-    }
+		return exePath;
+	}
 
-    static Config::Paths BuildPaths(const fs::path& baseDir) {
-        return {
-            .baseDir = baseDir,
-            .extensionsDir = "envs",
-            .configsDir = "configs",
-            .dataDir = "data",
-            .logsDir = "logs",
-            .cacheDir = "pkgs",
-        };
-    }
+	static Config::Paths BuildPaths(const fs::path& baseDir) {
+		return {
+			.baseDir = baseDir,
+			.extensionsDir = "envs",
+			.configsDir = "configs",
+			.dataDir = "data",
+			.logsDir = "logs",
+			.cacheDir = "pkgs",
+		};
+	}
 
-    static Result<std::shared_ptr<Plugify>> CreatePlugifyContext(
-        const fs::path& baseDir
-    ) {
+	static Result<std::shared_ptr<Plugify>> CreatePlugifyContext(const fs::path& baseDir) {
 		// Build paths
 		auto paths = BuildPaths(baseDir);
 
-        // Create context
-        auto buildResult = Plugify::CreateBuilder()
-            .WithLogger(s_logger)
-            .WithPaths(std::move(paths))
-            .Build();
+		// Create context
+		auto buildResult = Plugify::CreateBuilder()
+			.WithLogger(s_logger)
+			.WithPaths(std::move(paths))
+			.Build();
 
-        if (!buildResult) {
-            return MakeError("Failed to create Plugify context: {}",
-                buildResult.error());
-        }
+		if (!buildResult) {
+			return MakeError("Failed to create Plugify context: {}", buildResult.error());
+		}
 
-        // Initialize context
-        auto context = std::move(*buildResult);
-        if (auto result = context->Initialize(); !result) {
-            return MakeError("Failed to initialize context: {}",
-                result.error());
-        }
+		// Initialize context
+		auto context = std::move(*buildResult);
+		if (auto result = context->Initialize(); !result) {
+			return MakeError("Failed to initialize context: {}", result.error());
+		}
 
-        // Initialize manager
-        auto& manager = context->GetManager();
-        if (auto result = manager.Initialize(); !result) {
-            return MakeError("Failed to initialize plugin manager: {}",
-                result.error());
-        }
+		// Initialize manager
+		auto& manager = context->GetManager();
+		if (auto result = manager.Initialize(); !result) {
+			return MakeError("Failed to initialize plugin manager: {}", result.error());
+		}
 
-        plg::print("{}: Plugify initialized successfully",
-            Colorize("Success", Colors::GREEN));
+		plg::print("{}: Plugify initialized successfully", Colorize("Success", Colors::GREEN));
 
-        return context;
-    }
+		return context;
+	}
 
 public:
-    static Result<std::shared_ptr<Plugify>> Initialize(CAppSystemDict* systems) {
-        // Setup logging if listener exists
-    	if (s_listener) {
-    		LoggingSystem_PushLoggingState(false, false);
-    		LoggingSystem_RegisterLoggingListener(s_listener.get());
-    	}
+	static Result<std::shared_ptr<Plugify>> Initialize(CAppSystemDict* systems) {
+		// Setup logging if listener exists
+		if (s_listener) {
+			LoggingSystem_PushLoggingState(false, false);
+			LoggingSystem_RegisterLoggingListener(s_listener.get());
+		}
 
-    	// Notify about crashpad
-    	plg::print("{}: Crashpad {} in configuration",
-					Colorize("Info", Colors::BLUE), Colorize(s_crashpad ? "enabled" : "disabled", Colors::MAGENTA));
+		// Notify about crashpad
+		plg::print(
+		    "{}: Crashpad {} in configuration",
+		    Colorize("Info", Colors::BLUE),
+		    Colorize(s_crashpad ? "enabled" : "disabled", Colors::MAGENTA)
+		);
 
-        // Find CVar interface
+		// Find CVar interface
 		if (auto cvarResult = FindCVarInterface(systems); !cvarResult) {
-            plg::print("{}: {}",
-                Colorize("Warning", Colors::YELLOW), cvarResult.error());
-            // Non-fatal: continue without CVar
-        } else {
-            g_pCVar = *cvarResult;
-        }
+			plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), cvarResult.error());
+			// Non-fatal: continue without CVar
+		} else {
+			g_pCVar = *cvarResult;
+		}
 
-        // Install server hooks
-        if (auto hookResult = InstallServerHooks(); !hookResult) {
-            plg::print("{}: {}",
-                Colorize("Warning", Colors::YELLOW), hookResult.error());
-            // Non-fatal: continue without hooks
-        }
+		// Install server hooks
+		if (auto hookResult = InstallServerHooks(); !hookResult) {
+			plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), hookResult.error());
+			// Non-fatal: continue without hooks
+		}
 
 #if S2_PLATFORM_WINDOWS
-        // Setup crash handler
-        if (auto crashResult = SetupCrashHandler(); !crashResult) {
-            plg::print("{}: {}",
-                Colorize("Warning", Colors::YELLOW), crashResult.error());
-            // Non-fatal: continue without crash handler
-        }
+		// Setup crash handler
+		if (auto crashResult = SetupCrashHandler(); !crashResult) {
+			plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), crashResult.error());
+			// Non-fatal: continue without crash handler
+		}
 #endif
 
-        // Register ConVars
-        ConVar_Register(FCVAR_RELEASE | FCVAR_SERVER_CAN_EXECUTE | FCVAR_GAMEDLL);
+		// Register ConVars
+		ConVar_Register(FCVAR_RELEASE | FCVAR_SERVER_CAN_EXECUTE | FCVAR_GAMEDLL);
 
-        // Build base directory path
-        fs::path baseDir(Plat_GetGameDirectory());
-        baseDir /= S2_GAME_NAME "/addons/plugify/";
+		// Build base directory path
+		fs::path baseDir(Plat_GetGameDirectory());
+		baseDir /= S2_GAME_NAME "/addons/plugify/";
 
-    	// Validate micromamba
+		// Validate micromamba
 		if (auto mambaResult = ValidateMicromamba(baseDir); !mambaResult) {
-    		return MakeError(std::move(mambaResult.error()));
-    	}
+			return MakeError(std::move(mambaResult.error()));
+		}
 
-        // Create and initialize Plugify context
-    	return CreatePlugifyContext(baseDir);
-    }
+		// Create and initialize Plugify context
+		return CreatePlugifyContext(baseDir);
+	}
 };
 
 using OnAppSystemLoadedFn = void (*)(CAppSystemDict*);
@@ -3021,7 +3011,7 @@ int main(int argc, char* argv[]) {
 		binary_path /= "bin/" S2_BINARY;
 	}
 
-	if (!plg::is_debugger_present()) {
+	if (!std::is_debugger_present()) {
 		auto result = CrashpadInitializer::Initialize(binary_path, "crashpad.jsonc");
 		if (!result) {
 			std::println(std::cerr, "Crashpad error: {}", result.error());
@@ -3071,12 +3061,13 @@ int main(int argc, char* argv[]) {
 		LoggingSystem_PopLoggingState();
 	}
 
-	_ServerGamePostSimulate.Unhook();
-	_OnAppSystemLoaded.Unhook();
+	//_ServerGamePostSimulate.Unhook();
+	//_OnAppSystemLoaded.Unhook();
 
 	s_plugify.reset();
-	s_logger.reset();
 	s_listener.reset();
+	s_logger.reset();
+	s_crashpad.reset();
 
 	return res;
 }
