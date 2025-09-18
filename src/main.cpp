@@ -293,8 +293,13 @@ protected:
 		auto ms = duration_cast<milliseconds>(now - seconds);
 
 		return std::format(
-		    "[{:%F %T}.{:03d}] [{}] [{}:{}] {}\n",
 			"[{:%F %T}.{:03d}] [{}] [{}:{}] {}\n",
+			seconds,  // %F = YYYY-MM-DD, %T = HH:MM:SS
+			static_cast<int>(ms.count()),
+			plg::enum_to_string(severity),
+			loc.file_name(),
+			loc.line(),
+			message
 		);
 	}
 
@@ -334,8 +339,9 @@ public:
 		std::error_code ec;
 		fs::create_directories(filename.parent_path(), ec);
 
+		errno = 0;
 		std::ofstream file(filename, std::ios::app);
-		if (!file.is_open()) {
+		if (!file) {
 			return MakeError(
 			    "Failed to open log file: {} - {}",
 			    plg::as_string(filename),
@@ -348,52 +354,47 @@ public:
 
 	explicit FileLoggingListener(std::ofstream&& file, bool async = true)
 	    : _async(async)
+	    , _running(true)
 	    , _file(std::move(file)) {
 		if (_async) {
-			// Using jthread for automatic joining and stop_token support
-			_worker_thread = std::jthread([this](std::stop_token stop_token) {
-				ProcessQueue(std::move(stop_token));
+			_worker_thread = std::thread(&FileLoggingListener::ProcessQueue, this);
 		}
 	}
 
-	// jthread automatically requests stop and joins
-	// No manual stop management needed
-	~FileLoggingListener() = default;
+	~FileLoggingListener() {
+		if (_async) {
+			Stop();
+		}
+		_file.close();
+	}
 
 	void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
-		if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0) {
-		}
-
-		// Using string_view and removing trailing newline
-		std::string_view message = pMessage;
-		if (auto pos = message.find_last_not_of('\n'); pos != std::string_view::npos) {
-			message = message.substr(0, pos + 1);
-		} else if (message.find_first_not_of('\n') == std::string_view::npos) {
-			return;  // All newlines
-		}
-	}
-
-		}
+		if (pContext && (pContext->m_Flags & LCF_CONSOLE_ONLY) == 0) {
 			std::string_view message = pMessage;
+			if (message.ends_with('\n')) {
+				message = message.substr(0, message.size() - 1);
+			}
+			if (message.empty()) {
 				return;
+			}
 
-		auto seconds = std::chrono::floor<std::chrono::seconds>(now);
+			auto now = std::chrono::system_clock::now();
+			auto seconds = std::chrono::floor<std::chrono::seconds>(now);
 
-		// More robust timezone handling
-		std::string formatted_message;
-			    "[{:%Y%m%d_%H%M%S}] {}",
-			    std::chrono::utc_clock::from_sys(seconds),
-			    message
-			);
-		}
+			std::string formatted_message;
+			try {
+				std::chrono::zoned_time zt{ std::chrono::current_zone(), seconds };
 				formatted_message = std::format("[{:%Y%m%d_%H%M%S}] {}", zt, message);
+			} catch (const std::exception&) {
+				// Fallback to UTC if local timezone fails
 				// auto time_t = std::chrono::system_clock::to_time_t(seconds);
 				formatted_message = std::format(
+				    "[{:%Y%m%d_%H%M%S}] {}",
+				    std::chrono::utc_clock::from_sys(seconds),
+				    message
+				);
+			}
 
-		if (_async) {
-			std::lock_guard lock(_queue_mutex);
-			_message_queue.emplace(std::move(formatted_message));
-			_condition.notify_one();
 			if (_async) {
 				{
 					std::lock_guard lock(_queue_mutex);
