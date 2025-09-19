@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.10](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.9...v2.0.10) (2025-09-19)
+
+
+### Bug Fixes
+
+* crash on unload ([a86ae20](https://github.com/untrustedmodders/plugify-source2-launcher/commit/a86ae20ab9afeed7be7367fad42a9977729e9389))
+* crashpad rework ([8ec3b9f](https://github.com/untrustedmodders/plugify-source2-launcher/commit/8ec3b9f8d8eeb22497ed828f9610a35d0cfd85f6))
+* dynlibutils unhook ([739d5a3](https://github.com/untrustedmodders/plugify-source2-launcher/commit/739d5a31a1fc7ae5f49b1fa556a64241cae5c577))
+* FileLoggingListener ([5bf960b](https://github.com/untrustedmodders/plugify-source2-launcher/commit/5bf960bc3f6c777b10d97bc3fdb73729f6237771))
+* FileLoggingListener (2) ([d587b9d](https://github.com/untrustedmodders/plugify-source2-launcher/commit/d587b9d25cd1bef59b20eaaebb6521a427d5ed2a))
+
 ## [2.0.9](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.8...v2.0.9) (2025-09-17)
 
 
