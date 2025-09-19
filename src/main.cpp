@@ -450,10 +450,10 @@ private:
 enum class PlugifyState { Wait, Load, Unload, Reload };
 
 std::shared_ptr<Plugify> s_plugify;
-std::unique_ptr<CrashpadClient> s_crashpad;
 std::shared_ptr<ConsoleLoggger> s_logger;
 std::unique_ptr<FileLoggingListener> s_listener;
 PlugifyState s_state;
+bool s_crashpad;
 
 namespace plg {
 	/*PLUGIFY_FORCE_INLINE void print(const char* msg) {
@@ -2562,7 +2562,7 @@ namespace {
 		}
 
 		MINIDUMP_EXCEPTION_INFORMATION exceptionInfo;
-		exceptionInfo.ThreadId = GetCurrentThreadId();
+		exceptionInfo.ThreadId = ::GetCurrentThreadId();
 		exceptionInfo.ExceptionPointers = pExceptionPointers;
 		exceptionInfo.ClientPointers = FALSE;
 
@@ -2619,8 +2619,7 @@ class CrashpadInitializer {
 	};
 
 	static Result<fs::path> ValidateHandler(const fs::path& exeDir, std::string_view handlerName) {
-		fs::path handlerPath = exeDir
-		                       / std::format(S2_EXECUTABLE_PREFIX "{}" S2_EXECUTABLE_SUFFIX, handlerName);
+		fs::path handlerPath = exeDir / std::format(S2_EXECUTABLE_PREFIX "{}" S2_EXECUTABLE_SUFFIX, handlerName);
 
 		std::error_code ec;
 		if (!fs::exists(handlerPath, ec)) {
@@ -3019,7 +3018,7 @@ int main(int argc, char* argv[]) {
 			return 1;
 		}
 
-		s_crashpad = std::move(*result);
+		s_crashpad = true;
 	}
 
 	auto engine_path = binary_path / S2_LIBRARY_PREFIX "engine2" S2_LIBRARY_SUFFIX;
@@ -3068,7 +3067,6 @@ int main(int argc, char* argv[]) {
 	s_plugify.reset();
 	s_listener.reset();
 	s_logger.reset();
-	s_crashpad.reset();
 
 	return res;
 }
