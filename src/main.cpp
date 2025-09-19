@@ -455,6 +455,9 @@ std::unique_ptr<FileLoggingListener> s_listener;
 PlugifyState s_state;
 bool s_crashpad;
 
+#define BASE_PATH PLUGIFY_PATH_LITERAL("" S2_GAME_NAME "/" "addons" "/" "plugify" "/")
+#define MAMBA_PATH BASE_PATH PLUGIFY_PATH_LITERAL("bin" "/" S2_BINARY "/" S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX)
+
 namespace plg {
 	/*PLUGIFY_FORCE_INLINE void print(const char* msg) {
 		s_logger->Log(msg, S2Colors::WHITE, false);
@@ -2369,11 +2372,11 @@ CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
 		return;
 	}
 
-	fs::path baseDir(Plat_GetGameDirectory());
-	baseDir /= S2_GAME_NAME "/addons/plugify/";
+	fs::path gameDir(Plat_GetGameDirectory());
+	fs::path baseDir = gameDir / BASE_PATH;
+	fs::path exePath = gameDir / MAMBA_PATH;
 
 	std::error_code ec;
-	fs::path exePath(baseDir / "bin/" S2_BINARY "/" S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX);
 	if (!fs::exists(exePath, ec)) {
 		plg::print("{}: {} missing - {}", Colorize("Error", Colors::RED), Colorize("micromamba", Colors::CYAN), plg::as_string(exePath));
 		return;
@@ -2497,11 +2500,11 @@ CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
 static ConCommand mamba_command("mamba", micromamba_callback, "Micromamba control options", 0);
 static ConCommand conda_command("conda", micromamba_callback, "Micromamba control options", 0);
 
-using ServerGamePostSimulateFn = void (*)(IGameSystem*, const EventServerGamePostSimulate_t&);
-DynLibUtils::CVTFHookAuto<&IGameSystem::ServerGamePostSimulate> _ServerGamePostSimulate;
+std::unique_ptr<DynLibUtils::CModule> s_server;
+DynLibUtils::CVTFHookAuto<&IGameSystem::ServerGamePostSimulate> s_ServerGamePostSimulate;
 
 void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulate_t& msg) {
-	_ServerGamePostSimulate.Call(pThis, msg);
+	s_ServerGamePostSimulate.Call(pThis, msg);
 
 	if (!s_plugify) {
 		return;
@@ -2540,63 +2543,6 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 	}
 
 	s_state = PlugifyState::Wait;
-}
-
-namespace {
-	bool g_saveCrushDumps = true;
-#if S2_PLATFORM_WINDOWS
-	void SaveFullDump(PEXCEPTION_POINTERS pExceptionPointers) {
-		fs::path fileName = FormatFileName("crash", "mdmp");
-
-		HANDLE hFile = ::CreateFileW(
-			fileName.native().c_str(),
-			GENERIC_WRITE,
-			FILE_SHARE_READ,
-			NULL,
-			CREATE_ALWAYS,
-			FILE_ATTRIBUTE_NORMAL,
-			NULL
-		);
-		if (hFile == INVALID_HANDLE_VALUE) {
-			return;
-		}
-
-		MINIDUMP_EXCEPTION_INFORMATION exceptionInfo;
-		exceptionInfo.ThreadId = ::GetCurrentThreadId();
-		exceptionInfo.ExceptionPointers = pExceptionPointers;
-		exceptionInfo.ClientPointers = FALSE;
-
-		::MiniDumpWriteDump(
-			::GetCurrentProcess(),
-			::GetCurrentProcessId(),
-			hFile,
-			MINIDUMP_TYPE(
-				MiniDumpWithIndirectlyReferencedMemory | MiniDumpScanMemory | MiniDumpWithFullMemory
-				| MiniDumpWithProcessThreadData | MiniDumpWithPrivateReadWriteMemory
-			),
-			pExceptionPointers ? &exceptionInfo : NULL,
-			NULL,
-			NULL
-		);
-
-		::CloseHandle(hFile);
-	}
-
-	struct MiniDumpHandlerData_t {
-		int32_t nFlags;
-		int32_t nExitCode;
-		PEXCEPTION_POINTERS pExceptionPointers;
-		// ... more
-	};
-
-	void CrashpadGenericMiniDumpHandler(MiniDumpHandlerData_t* data) {
-		if (g_saveCrushDumps) {
-			SaveFullDump(data->pExceptionPointers);
-		} else {
-			CrashpadClient::DumpAndCrash(data->pExceptionPointers);
-		}
-	}
-#endif
 }
 
 static constexpr auto RWX_PERMS = fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec
@@ -2756,49 +2702,54 @@ public:
 			return MakeError("Failed to start Crashpad handler");
 		}
 
-		g_saveCrushDumps = false;  // Disable alternative crash handling
-
 		return client;
 	}
 };
 
 class PlugifyInitializer {
 private:
-	static constexpr std::string_view REQUIRED_INTERFACE = CVAR_INTERFACE_VERSION;
-	static constexpr std::string_view HOOK_MODULE = "server";
-	static constexpr std::string_view HOOK_CLASS = "CLightQueryGameSystem";
-
 	static Result<ICvar*> FindCVarInterface(CAppSystemDict* systems) {
+		constexpr std::string_view interfaceName = CVAR_INTERFACE_VERSION;
+
 		for (const auto& system : systems->m_Systems) {
-			if (system.m_pInterfaceName == REQUIRED_INTERFACE) {
+			if (system.m_pInterfaceName == interfaceName) {
 				if (auto* pCvar = static_cast<ICvar*>(system.m_pSystem)) {
 					plg::print("{}: Found CVar interface", Colorize("Info", Colors::BLUE));
 					return pCvar;
 				}
 			}
 		}
-		return MakeError("CVar interface {} not found", REQUIRED_INTERFACE);
+		return MakeError("CVar interface not found");
 	}
 
 	static Result<void> InstallServerHooks() {
-		DynLibUtils::CModule server(HOOK_MODULE);
+		DynLibUtils::CModule server("server");
 		if (!server) {
-			return MakeError("Failed to load {} module", HOOK_MODULE);
+			return MakeError("Failed to load server module");
 		}
 
-		auto table = server.GetVirtualTableByName(HOOK_CLASS);
+		auto table = server.GetVirtualTableByName("CLightQueryGameSystem");
 		if (!table) {
-			return MakeError("Virtual table {} not found", HOOK_CLASS);
+			return MakeError("Virtual table CLightQueryGameSystem not found");
 		}
+
+		s_server = std::make_unique<DynLibUtils::CModule>(std::move(server));
 
 		DynLibUtils::CVirtualTable vtable(table);
-		_ServerGamePostSimulate.Hook(vtable, &ServerGamePostSimulate);
+		s_ServerGamePostSimulate.Hook(vtable, &ServerGamePostSimulate);
 
 		plg::print("{}: Server hooks installed", Colorize("Info", Colors::GREEN));
 		return {};
 	}
 
 #if S2_PLATFORM_WINDOWS
+	struct MiniDumpHandlerData_t {
+		int32_t nFlags;
+		int32_t nExitCode;
+		PEXCEPTION_POINTERS pExceptionPointers;
+		// ... more
+	};
+
 	static Result<void> SetupCrashHandler() {
 		using MiniDumpHandler = void (*)(MiniDumpHandlerData_t*);
 		using SetMiniDumpHandlerFn = void (*)(MiniDumpHandler, bool);
@@ -2815,17 +2766,16 @@ private:
 			return MakeError("SetDefaultMiniDumpHandler function not found");
 		}
 
-		SetMiniDumpHandler(&CrashpadGenericMiniDumpHandler, true);
+		SetMiniDumpHandler([](MiniDumpHandlerData_t* data) {
+			CrashpadClient::DumpAndCrash(data->pExceptionPointers);
+		}, true);
 
 		plg::print("{}: Crash handler registered", Colorize("Info", Colors::GREEN));
 		return {};
 	}
 #endif
 
-	static Result<fs::path> ValidateMicromamba(const fs::path& baseDir) {
-		fs::path exePath = baseDir / "bin" / S2_BINARY
-		                   / (S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX);
-
+	static Result<fs::path> ValidateMicromamba(const fs::path& exePath) {
 		std::error_code ec;
 		if (!fs::exists(exePath, ec)) {
 			return MakeError("Micromamba executable not found at: {}", exePath.string());
@@ -2915,10 +2865,12 @@ public:
 		}
 
 #if S2_PLATFORM_WINDOWS
-		// Setup crash handler
-		if (auto crashResult = SetupCrashHandler(); !crashResult) {
-			plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), crashResult.error());
-			// Non-fatal: continue without crash handler
+		if (s_crashpad) {
+			// Setup crash handler
+			if (auto crashResult = SetupCrashHandler(); !crashResult) {
+				plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), crashResult.error());
+				// Non-fatal: continue without crash handler
+			}
 		}
 #endif
 
@@ -2926,11 +2878,12 @@ public:
 		ConVar_Register(FCVAR_RELEASE | FCVAR_SERVER_CAN_EXECUTE | FCVAR_GAMEDLL);
 
 		// Build base directory path
-		fs::path baseDir(Plat_GetGameDirectory());
-		baseDir /= S2_GAME_NAME "/addons/plugify/";
+		fs::path gameDir(Plat_GetGameDirectory());
+		fs::path baseDir = gameDir / BASE_PATH;
+		fs::path exePath = gameDir / MAMBA_PATH;
 
 		// Validate micromamba
-		if (auto mambaResult = ValidateMicromamba(baseDir); !mambaResult) {
+		if (auto mambaResult = ValidateMicromamba(exePath); !mambaResult) {
 			return MakeError(std::move(mambaResult.error()));
 		}
 
@@ -2939,26 +2892,25 @@ public:
 	}
 };
 
-using OnAppSystemLoadedFn = void (*)(CAppSystemDict*);
-DynLibUtils::CVTFHookAuto<&CAppSystemDict::OnAppSystemLoaded> _OnAppSystemLoaded;
-std::unordered_set<std::string> g_loadList;
+DynLibUtils::CVTFHookAuto<&CAppSystemDict::OnAppSystemLoaded> s_OnAppSystemLoaded;
+std::unordered_set<std::string> s_loadList;
 
 void OnAppSystemLoaded(CAppSystemDict* pThis) {
-	_OnAppSystemLoaded.Call(pThis);
+	s_OnAppSystemLoaded.Call(pThis);
 
 	if (s_plugify) {
 		return;
 	}
 
-	if (g_loadList.empty()) {
-		g_loadList.reserve(static_cast<size_t>(pThis->m_Modules.Count()));
+	if (s_loadList.empty()) {
+		s_loadList.reserve(static_cast<size_t>(pThis->m_Modules.Count()));
 	}
 
 	constexpr std::string_view moduleName = S2_GAME_START;
 
 	for (const auto& module : pThis->m_Modules) {
 		if (module.m_pModuleName) {
-			if (g_loadList.insert(module.m_pModuleName).second) {
+			if (s_loadList.insert(module.m_pModuleName).second) {
 				if (module.m_pModuleName == moduleName) {
 					auto result = PlugifyInitializer::Initialize(pThis);
 					if (!result) {
@@ -3042,7 +2994,7 @@ int main(int argc, char* argv[]) {
 
 	auto table = engine.GetVirtualTableByName("CMaterialSystem2AppSystemDict");
 	DynLibUtils::CVirtualTable vtable(table);
-	_OnAppSystemLoaded.Hook(vtable, &OnAppSystemLoaded);
+	s_OnAppSystemLoaded.Hook(vtable, &OnAppSystemLoaded);
 
 	using Source2MainFn = int (*)(
 	    void* hInstance,
@@ -3061,9 +3013,10 @@ int main(int argc, char* argv[]) {
 		LoggingSystem_PopLoggingState();
 	}
 
-	//_ServerGamePostSimulate.Unhook();
-	//_OnAppSystemLoaded.Unhook();
+	s_ServerGamePostSimulate.Unhook();
+	s_OnAppSystemLoaded.Unhook();
 
+	s_server.reset();
 	s_plugify.reset();
 	s_listener.reset();
 	s_logger.reset();
