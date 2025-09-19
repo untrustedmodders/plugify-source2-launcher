@@ -3021,5 +3021,7 @@ int main(int argc, char* argv[]) {
 	s_listener.reset();
 	s_logger.reset();
 
+	g_pCVar = nullptr;
+
 	return res;
 }
