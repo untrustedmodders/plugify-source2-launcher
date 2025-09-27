@@ -38,8 +38,8 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 if(NOT CMAKE_BUILD_TYPE MATCHES "Debug|Devel|MinSizeRel|RelWithDebInfo|Release")
-    message(STATUS "CMAKE_BUILD_TYPE not set, defaulting to Debug.")
-    set(CMAKE_BUILD_TYPE Debug)
+    message(STATUS "CMAKE_BUILD_TYPE not set, defaulting to Release.")
+    set(CMAKE_BUILD_TYPE Release)
 endif()
 
 if(UNIX AND NOT APPLE)
@@ -111,6 +111,13 @@ if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX)
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE -Wextra -Wshadow -Wconversion) #  -Werror -Wpedantic
+endif()
+
+# Produce PDB file for debug
+if(MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:/Zi>)
+else()
+    target_compile_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:-g1>)
 endif()
 
 if(LINUX)
