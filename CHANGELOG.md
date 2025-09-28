@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.12](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.11...v2.0.12) (2025-09-28)
+
+
+### Bug Fixes
+
+* remove dev files from build ([bee9f5e](https://github.com/untrustedmodders/plugify-source2-launcher/commit/bee9f5e2142e06c480e157b07805ecd57e88b0ee))
+
 ## [2.0.11](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.10...v2.0.11) (2025-09-27)
 
 
