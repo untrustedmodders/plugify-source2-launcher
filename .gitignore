@@ -9,3 +9,4 @@ CMakeUserPresets.json
 
 # Build results
 build/
+/cmake-build-debug
