@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.13](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.12...v2.0.13) (2025-09-30)
+
+
+### Bug Fixes
+
+* add `cmake-build-debug` folder to .gitignore ([ded65b9](https://github.com/untrustedmodders/plugify-source2-launcher/commit/ded65b93b78b6c0dae481097a3e047d8c5f944ec))
+* move logs file to `sessions` dir ([8dd4ae2](https://github.com/untrustedmodders/plugify-source2-launcher/commit/8dd4ae2192f621632121d4c157e2a19cec73569e))
+
 ## [2.0.12](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.11...v2.0.12) (2025-09-28)
 
 
