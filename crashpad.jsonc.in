@@ -3,7 +3,7 @@
   "handlerApp": "crashpad_handler",
   "databaseDir": "../../${PLUGIFY_GAME_NAME}/addons/plugify/crashes",
   "metricsDir": "../../${PLUGIFY_GAME_NAME}/addons/plugify/crashes",
-  "logsDir": "../../${PLUGIFY_GAME_NAME}/addons/plugify/logs",
+  "logsDir": "../../${PLUGIFY_GAME_NAME}/addons/plugify/logs/sessions",
   "annotations": {
     "format": "minidump",
     "database": "Plugify",
