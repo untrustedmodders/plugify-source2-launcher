@@ -116,6 +116,7 @@ endif()
 # Produce PDB file for debug
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:/Zi>)
+    target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:/DEBUG /OPT:REF /OPT:ICF>)
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:-g1>)
 endif()
