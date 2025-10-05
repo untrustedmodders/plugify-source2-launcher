@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.14](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.13...v2.0.14) (2025-10-05)
+
+
+### Bug Fixes
+
+* improve san and debug symbols on windows ([ea12ea7](https://github.com/untrustedmodders/plugify-source2-launcher/commit/ea12ea71c4a25e868e19fd3592816ec86d35ca69))
+* update deps ([68e2250](https://github.com/untrustedmodders/plugify-source2-launcher/commit/68e22500c2ff3ab1dbe1818423fd6c2e206ba682))
+
 ## [2.0.13](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.12...v2.0.13) (2025-09-30)
 
 
