@@ -1,4 +1,4 @@
-# s2-plugify
+# plugify-source2-launcher
 # Copyright (C) 2023-2025 untrustedmodders
 # Licensed under the MIT license. See LICENSE file in the project root for details.
 
@@ -79,9 +79,9 @@ add_subdirectory(external/dynlibutils)
 #
 # Main
 #
-file(GLOB_RECURSE PLUGIFY_SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "src/*.cpp")
+file(GLOB_RECURSE SOURCE_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "src/*.cpp")
 
-add_executable(${PROJECT_NAME} ${PLUGIFY_SOURCES})
+add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 
 #
 # Dependencies
@@ -91,17 +91,17 @@ include(FetchCLI)
 include(FetchReproc)
 find_package(Threads REQUIRED)
 
-set(PLUGIFY_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ crashpad_client cpp-memory_utils CLI11 sourcesdk::sourcesdk)
+set(S2_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ crashpad_client cpp-memory_utils CLI11 sourcesdk::sourcesdk)
 
 if(NOT COMPILER_SUPPORTS_FORMAT)
-    #set(PLUGIFY_LINK_LIBRARIES ${PLUGIFY_LINK_LIBRARIES} fmt::fmt-header-only)
+    #set(S2_LINK_LIBRARIES ${S2_LINK_LIBRARIES} fmt::fmt-header-only)
 endif()
 
 if(WIN32)
-    set(PLUGIFY_LINK_LIBRARIES ${PLUGIFY_LINK_LIBRARIES} Dbghelp.lib)
+    set(S2_LINK_LIBRARIES ${S2_LINK_LIBRARIES} Dbghelp.lib)
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE ${PLUGIFY_LINK_LIBRARIES} ${CMAKE_DL_LIBS})
+target_link_libraries(${PROJECT_NAME} PRIVATE ${S2_LINK_LIBRARIES} ${CMAKE_DL_LIBS})
 
 if(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX=1)
@@ -131,8 +131,8 @@ elseif(UNIX)
     target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/sym/version_script.lds")
 endif()
 
-set(PLUGIFY_GAME_NAME "csgo" CACHE INTERNAL "Set game name")
-set(PLUGIFY_GAME_START "matchmaking" CACHE INTERNAL "Set game library name to start after")
+set(S2_GAME_NAME "csgo" CACHE INTERNAL "Set game name")
+set(S2_GAME_START "matchmaking" CACHE INTERNAL "Set game library name to start after")
 set(S2_COMPILE_DEFINITIONS
         S2_PLATFORM_WINDOWS=$<BOOL:${WIN32}>
         S2_PLATFORM_APPLE=$<BOOL:${APPLE}>
@@ -142,8 +142,8 @@ set(S2_COMPILE_DEFINITIONS
         S2_EXECUTABLE_SUFFIX="${CMAKE_EXECUTABLE_SUFFIX}"
         S2_EXECUTABLE_PREFIX="${CMAKE_EXECUTABLE_PREFIX}"
 
-        S2_GAME_NAME="${PLUGIFY_GAME_NAME}"
-        S2_GAME_START="${PLUGIFY_GAME_START}"
+        S2_GAME_NAME="${S2_GAME_NAME}"
+        S2_GAME_START="${S2_GAME_START}"
         S2_PROJECT_YEAR="${PROJECT_BUILD_DATE_YEAR}"
         S2_PROJECT_NAME="${PROJECT_NAME}"
         S2_PROJECT_DESCRIPTION="${CMAKE_PROJECT_DESCRIPTION}"
@@ -180,12 +180,12 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE ${S2_COMPILE_DEFINITIONS})
 #target_compile_options(${PROJECT_NAME} PRIVATE ${S2_COMPILE_OPTIONS})
 
 configure_file(
-    ${CMAKE_SOURCE_DIR}/crashpad.jsonc.in
-    ${CMAKE_BINARY_DIR}/crashpad.jsonc
+        ${CMAKE_SOURCE_DIR}/micromamba/${S2_MICROMAMBA}
+        ${CMAKE_BINARY_DIR}/${CMAKE_EXECUTABLE_PREFIX}micromamba${CMAKE_EXECUTABLE_SUFFIX}
+        COPYONLY
 )
 
 configure_file(
-    ${CMAKE_SOURCE_DIR}/micromamba/${S2_MICROMAMBA}
-    ${CMAKE_BINARY_DIR}/${CMAKE_EXECUTABLE_PREFIX}micromamba${CMAKE_EXECUTABLE_SUFFIX}
-    COPYONLY
+        ${CMAKE_SOURCE_DIR}/crashpad.jsonc.in
+        ${CMAKE_BINARY_DIR}/crashpad.jsonc
 )

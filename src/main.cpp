@@ -2545,8 +2545,12 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 	s_state = PlugifyState::Wait;
 }
 
-static constexpr auto RWX_PERMS = fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec
-                                  | fs::perms::others_read | fs::perms::others_exec;
+static constexpr auto RWX_PERMS =
+		fs::perms::owner_all |
+		fs::perms::group_read |
+		fs::perms::group_exec |
+		fs::perms::others_read |
+		fs::perms::others_exec;
 
 class CrashpadInitializer {
 	struct Metadata {
@@ -2778,7 +2782,7 @@ private:
 	static Result<fs::path> ValidateMicromamba(const fs::path& exePath) {
 		std::error_code ec;
 		if (!fs::exists(exePath, ec)) {
-			return MakeError("Micromamba executable not found at: {}", exePath.string());
+			return MakeError("Micromamba executable not found at: {}", plg::as_string(exePath));
 		}
 
 		fs::permissions(exePath, RWX_PERMS, fs::perm_options::replace, ec);

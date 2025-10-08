@@ -20,8 +20,8 @@
 			"binaryDir": "${sourceDir}/build/${hostSystemName}/CS2/${presetName}",
 			"inherits": "default",
 			"cacheVariables": {
-				"PLUGIFY_GAME_NAME": "csgo",
-				"PLUGIFY_GAME_START": "matchmaking",
+				"S2_GAME_NAME": "csgo",
+				"S2_GAME_START": "matchmaking",
 				"SOURCESDK_GAME_TARGET": "cs2"
 			}
 		},
@@ -36,8 +36,8 @@
 				"rhs": "Windows"
 			},
 			"cacheVariables": {
-				"PLUGIFY_GAME_NAME": "citadel",
-				"PLUGIFY_GAME_START": "v8system",
+				"S2_GAME_NAME": "citadel",
+				"S2_GAME_START": "v8system",
 				"SOURCESDK_GAME_TARGET": "deadlock"
 			}
 		},
