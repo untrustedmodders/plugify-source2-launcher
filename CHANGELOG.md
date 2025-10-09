@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.15](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.14...v2.0.15) (2025-10-09)
+
+
+### Bug Fixes
+
+* refactor cmake for consistency ([1f0884b](https://github.com/untrustedmodders/plugify-source2-launcher/commit/1f0884b1f6131efcb402530c41513e5f4cd77dc0))
+* rework build output ([7433cf7](https://github.com/untrustedmodders/plugify-source2-launcher/commit/7433cf745cb879e5254a2080cb10ae632f1717c7))
+
 ## [2.0.14](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.13...v2.0.14) (2025-10-05)
 
 
