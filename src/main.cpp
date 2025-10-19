@@ -242,7 +242,11 @@ public:
 	void Log(std::string_view message, Severity severity, [[maybe_unused]] std::source_location loc) override {
 		if (severity <= m_severity) {
 			auto output = FormatMessage(message, severity, loc);
-
+			/*LoggingRareOptions_t options {
+				.m_File = loc.file_name(),
+				.m_Line = static_cast<int>(loc.line()),
+				.m_Function = loc.function_name(),
+			};*/
 			std::scoped_lock<std::mutex> lock(m_mutex);
 			for (auto segments = Tokenize(output); const auto& segment : segments) {
 				switch (severity) {
