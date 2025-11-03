@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.19](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.18...v2.0.19) (2025-11-03)
+
+
+### Bug Fixes
+
+* some test of avx2 ([f230ffb](https://github.com/untrustedmodders/plugify-source2-launcher/commit/f230ffb5c1a5b6ae98b5fba1a06cebdfe772c583))
+
 ## [2.0.18](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.17...v2.0.18) (2025-11-03)
 
 
