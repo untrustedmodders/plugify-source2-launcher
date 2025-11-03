@@ -41,6 +41,7 @@
 #include <convar.h>
 #include <igamesystem.h>
 #include <tier0/logging.h>
+#include <engine/hoststate.h>
 #include <appframework/iappsystem.h>
 
 using namespace plugify;
@@ -2714,20 +2715,28 @@ public:
 	}
 };
 
+std::unique_ptr<DynLibUtils::CModule> s_engine;
+DynLibUtils::CVTFHookAuto<&IHostStateMgr::RequestHS_Quit> s_HostStateMgrQuit;
+
+void HostStateMgrQuit(IHostStateMgr* pThis) {
+	s_plugify.reset();
+
+	s_HostStateMgrQuit.Call(pThis);
+}
+
 class PlugifyInitializer {
 private:
-	static Result<ICvar*> FindCVarInterface(CAppSystemDict* systems) {
-		constexpr std::string_view interfaceName = CVAR_INTERFACE_VERSION;
-
-		for (const auto& system : systems->m_Systems) {
+	template<typename T>
+	static Result<T*> FindInterface(CAppSystemDict* dict, std::string_view interfaceName) {
+		for (const auto& system : dict->m_Systems) {
 			if (system.m_pInterfaceName == interfaceName) {
-				if (auto* pCvar = static_cast<ICvar*>(system.m_pSystem)) {
-					plg::print("{}: Found CVar interface", Colorize("Info", Colors::BLUE));
+				if (auto* pCvar = static_cast<T*>(system.m_pSystem)) {
+					plg::print("{}: Found {} interface", Colorize("Info", Colors::BLUE), interfaceName);
 					return pCvar;
 				}
 			}
 		}
-		return MakeError("CVar interface not found");
+		return MakeError("{} interface not found", interfaceName);
 	}
 
 	static Result<void> InstallServerHooks() {
@@ -2736,15 +2745,27 @@ private:
 			return MakeError("Failed to load server module");
 		}
 
-		auto table = server.GetVirtualTableByName("CLightQueryGameSystem");
-		if (!table) {
+		if (auto table = server.GetVirtualTableByName("CLightQueryGameSystem")) {
+			DynLibUtils::CVirtualTable vtable(table);
+			s_ServerGamePostSimulate.Hook(vtable, &ServerGamePostSimulate);
+		} else {
 			return MakeError("Virtual table CLightQueryGameSystem not found");
 		}
 
-		s_server = std::make_unique<DynLibUtils::CModule>(std::move(server));
+		DynLibUtils::CModule engine("engine2");
+		if (!engine) {
+			return MakeError("Failed to load engine module");
+		}
 
-		DynLibUtils::CVirtualTable vtable(table);
-		s_ServerGamePostSimulate.Hook(vtable, &ServerGamePostSimulate);
+		if (auto table = engine.GetVirtualTableByName("CHostStateMgr")) {
+			DynLibUtils::CVirtualTable vtable(table);
+			s_HostStateMgrQuit.Hook(vtable, &HostStateMgrQuit);
+		} else {
+			return MakeError("Virtual table CHostStateMgr not found");
+		}
+
+		s_server = std::make_unique<DynLibUtils::CModule>(std::move(server));
+		s_engine = std::make_unique<DynLibUtils::CModule>(std::move(engine));
 
 		plg::print("{}: Server hooks installed", Colorize("Info", Colors::GREEN));
 		return {};
@@ -2844,7 +2865,7 @@ private:
 	}
 
 public:
-	static Result<std::shared_ptr<Plugify>> Initialize(CAppSystemDict* systems) {
+	static Result<std::shared_ptr<Plugify>> Initialize(CAppSystemDict* dict) {
 		// Setup logging if listener exists
 		if (s_listener) {
 			LoggingSystem_PushLoggingState(false, false);
@@ -2858,10 +2879,10 @@ public:
 		    Colorize(s_crashpad ? "enabled" : "disabled", Colors::MAGENTA)
 		);
 
-		// Find CVar interface
-		if (auto cvarResult = FindCVarInterface(systems); !cvarResult) {
+		// Find ICvar interface
+		if (auto cvarResult = FindInterface<ICvar>(dict, CVAR_INTERFACE_VERSION); !cvarResult) {
 			plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), cvarResult.error());
-			// Non-fatal: continue without CVar
+			// Non-fatal: continue without ICvar
 		} else {
 			g_pCVar = *cvarResult;
 		}
@@ -2939,11 +2960,11 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
 }
 
 std::optional<fs::path> ExecutablePath() {
-	std::string execPath(MAX_PATH, '\0');
+	plg::path_string execPath(MAX_PATH, PLUGIFY_PATH_LITERAL('\0'));
 
 	while (true) {
 #if S2_PLATFORM_WINDOWS
-		size_t len = ::GetModuleFileNameA(nullptr, execPath.data(), static_cast<DWORD>(execPath.length()));
+		size_t len = ::GetModuleFileNameW(nullptr, execPath.data(), static_cast<DWORD>(execPath.length()));
 		if (len == 0)
 #elif S2_PLATFORM_LINUX
 		ssize_t len = ::readlink("/proc/self/exe", execPath.data(), execPath.length());
@@ -3023,13 +3044,15 @@ int main(int argc, char* argv[]) {
 
 	s_ServerGamePostSimulate.Unhook();
 	s_OnAppSystemLoaded.Unhook();
-
-	s_server.reset();
-	s_plugify.reset();
-	s_listener.reset();
-	s_logger.reset();
+	s_HostStateMgrQuit.Unhook();
 
 	g_pCVar = nullptr;
+	g_pSource2Server = nullptr;
+
+	s_server.reset();
+	s_engine.reset();
+	s_listener.reset();
+	s_logger.reset();
 
 	return res;
 }
