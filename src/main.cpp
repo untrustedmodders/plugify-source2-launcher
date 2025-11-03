@@ -3004,10 +3004,16 @@ int main(int argc, char* argv[]) {
 
 	auto engine_path = binary_path / S2_LIBRARY_PREFIX "engine2" S2_LIBRARY_SUFFIX;
 	auto parent_path = binary_path.generic_string();
+#if S2_PLATFORM_WINDOWS
+	int flags = LOAD_WITH_ALTERED_SEARCH_PATH;
+#else
+	int flags = RTLD_NOW | RTLD_GLOBAL;
+#endif
 
-	DynLibUtils::CModule engine(engine_path, DynLibUtils::LoadFlag::Now | DynLibUtils::LoadFlag::Global | DynLibUtils::LoadFlag::AlteredSearchPath);
+	DynLibUtils::CModule engine{};
+	engine.LoadFromPath(plg::as_string(engine_path), flags);
 	if (!engine) {
-		std::println(std::cerr, "Launcher error: {} - {}", engine.GetError(), plg::as_string(engine_path));
+		std::println(std::cerr, "Launcher error: {} - {}", engine.GetLastError(), plg::as_string(engine_path));
 		return 1;
 	}
 
