@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.18](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.17...v2.0.18) (2025-11-03)
+
+
+### Bug Fixes
+
+* improve plugify unload ([38642d8](https://github.com/untrustedmodders/plugify-source2-launcher/commit/38642d8176fc99c4de232e088bd84e6258274376))
+* update config ([ccbe7f2](https://github.com/untrustedmodders/plugify-source2-launcher/commit/ccbe7f27c485ea04228aef92d3a41e11e298c44e))
+* update deps ([6d9fbb0](https://github.com/untrustedmodders/plugify-source2-launcher/commit/6d9fbb0262e98f457d786c8c62521a6fd3780dc4))
+
 ## [2.0.17](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.16...v2.0.17) (2025-10-21)
 
 
