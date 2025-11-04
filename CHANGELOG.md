@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.21](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.20...v2.0.21) (2025-11-04)
+
+
+### Bug Fixes
+
+* update dynlib ([38c2524](https://github.com/untrustedmodders/plugify-source2-launcher/commit/38c25240a53638fbb224ca65b5735926499033c0))
+
 ## [2.0.20](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.19...v2.0.20) (2025-11-03)
 
 
