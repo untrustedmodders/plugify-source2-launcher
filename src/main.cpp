@@ -452,7 +452,7 @@ private:
 	}
 };
 
-enum class PlugifyState { Wait, Load, Unload, Reload };
+enum class PlugifyState { Wait, Load, Unload, Reload, Quit };
 
 std::shared_ptr<Plugify> s_plugify;
 std::shared_ptr<ConsoleLoggger> s_logger;
@@ -2444,13 +2444,16 @@ CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
 			continue;
 		}
 	}
+
 	if (!has_yes) {
 		cmd.emplace_back("-y");  // Add -y flag for non-interactive mode
 	}
+
 	if (!has_root) {
 		cmd.emplace_back("-r");  // Add -r path
 		cmd.push_back(plg::as_string(baseDir));
 	}
+
 	if (!has_name && !has_help) {
 		if (command == "install" || command == "update" || command == "repoquery" || command == "remove"
 		    || command == "uninstall" || command == "list" || command == "search") {
@@ -2543,6 +2546,9 @@ void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulat
 			}
 			break;
 		}
+		case PlugifyState::Quit:
+			s_plugify.reset();
+			return;
 		case PlugifyState::Wait:
 			return;
 	}
@@ -2719,9 +2725,9 @@ std::unique_ptr<DynLibUtils::CModule> s_engine;
 DynLibUtils::CVTFHookAuto<&IHostStateMgr::RequestHS_Quit> s_HostStateMgrQuit;
 
 void HostStateMgrQuit(IHostStateMgr* pThis) {
-	s_plugify.reset();
-
 	s_HostStateMgrQuit.Call(pThis);
+
+	s_state = PlugifyState::Quit;
 }
 
 class PlugifyInitializer {
