@@ -173,16 +173,7 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         uses: Ilshidur/action-discord@0.3.2
         with:
-          args: |
-            🎉 **New Release: ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}**
-            
-            📦 **Downloads:** [${{ needs.setup.outputs.tag_name }}](${{ needs.package.outputs.url }})
-            
-            Install via curl:
-            ```bash
-            cd ./cs2/game
-            curl -LO [${{ needs.setup.outputs.url }}](${{ needs.package.outputs.url }})
-            ```
+          args: "🎉 **New Release: ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}**\n\n📦 **Downloads:** [${{ needs.setup.outputs.tag_name }}](${{ needs.package.outputs.url }})\n\nInstall via curl:\n```bash\ncd ./cs2/game\ncurl -LO [${{ needs.setup.outputs.url }}](${{ needs.package.outputs.url }})\n```"
 
       - name: Send Failure Notification
         if: ${{ failure() }}
