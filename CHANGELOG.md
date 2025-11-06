@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.25](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.24...v2.0.25) (2025-11-06)
+
+
+### Bug Fixes
+
+* add new design for notify discord ([15afd0d](https://github.com/untrustedmodders/plugify-source2-launcher/commit/15afd0d3887e364bb6a04fdfefc7e340eb3da782))
+
 ## [2.0.24](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.23...v2.0.24) (2025-11-06)
 
 
