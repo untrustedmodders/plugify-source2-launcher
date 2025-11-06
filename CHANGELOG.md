@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.23](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.22...v2.0.23) (2025-11-06)
+
+
+### Bug Fixes
+
+* format release message for discord ([8e02451](https://github.com/untrustedmodders/plugify-source2-launcher/commit/8e02451748fe776a4e0aae63c36181118c931f4d))
+
 ## [2.0.22](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.21...v2.0.22) (2025-11-05)
 
 
