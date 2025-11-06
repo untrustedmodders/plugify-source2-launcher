@@ -168,12 +168,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send Discord Notification
-        if: ${{ success() }}
         uses: tsickert/discord-webhook@v7.0.0
         with:
-          webhook-url: ${{ secrets.WEBHOOK_URL }}
+          webhook-url: ${{ env.DISCORD_WEBHOOK }}
           embed-description: "## <:plugin_creator:1336096248515657880> **New Release: ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}**\n\n### <:link:1342486300653129811> **Downloads:** [${{ needs.setup.outputs.tag_name }}](${{ needs.package.outputs.url }})\n\n### Install via curl:\n**For Linux:**\n```bash\ncd ./cs2/game\ncurl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2```\n**For Windows:**\n```bash\ncd ./cs2/game\ncurl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-win64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2```"
           embed-color: 955135
+      - name: Append File 1 For Discord Notification
+        uses: tsickert/discord-webhook@v7.0.0
+        with:
+          webhook-url: ${{ env.DISCORD_WEBHOOK }}
+          filename: build/linuxsteamrt64/plugify-source2-launcher-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
+      - name: Append File 2 For Discord Notification
+        uses: tsickert/discord-webhook@v7.0.0
+        with:
+          webhook-url: ${{ env.DISCORD_WEBHOOK }}
+          filename: build/win64/plugify-source2-launcher-build-win64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
 
       - name: Send Failure Notification
         if: ${{ failure() }}
