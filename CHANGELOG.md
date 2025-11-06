@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.28](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.27...v2.0.28) (2025-11-06)
+
+
+### Bug Fixes
+
+* webhook-url ([d94d7d2](https://github.com/untrustedmodders/plugify-source2-launcher/commit/d94d7d22712b3007d000f62266d3675f22d1ea1e))
+
 ## [2.0.27](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.26...v2.0.27) (2025-11-06)
 
 
