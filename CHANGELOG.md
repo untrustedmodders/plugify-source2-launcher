@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.24](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.23...v2.0.24) (2025-11-06)
+
+
+### Bug Fixes
+
+* second fix notify discord ([658d5ed](https://github.com/untrustedmodders/plugify-source2-launcher/commit/658d5ed3c354e6cc0930dbaa4ad96453105112ba))
+
 ## [2.0.23](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.22...v2.0.23) (2025-11-06)
 
 
