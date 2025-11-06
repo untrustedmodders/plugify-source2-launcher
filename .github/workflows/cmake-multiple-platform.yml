@@ -169,23 +169,30 @@ jobs:
     steps:
       - name: Send Discord Notification
         if: ${{ success() }}
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        uses: Ilshidur/action-discord@0.3.2
-        with:
-          args: |
-            🎉 **New Release: ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}**
-            
-            📦 **Downloads:** [${{ needs.setup.outputs.tag_name }}](${{ needs.package.outputs.url }})
-            
-            Install via curl:
-            ```bash
-            cd ./cs2/game
-            # Linux
-            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
-            # Windows
-            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-win64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
-            ```
+        run: |
+          curl -X POST \
+            -H "Content-Type: multipart/form-data" \
+            -F "payload_json={
+              \"embeds\": [
+                {
+                  \"description\": \"## <:plugin_creator:1336096248515657880> **New Release: ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}**\n            \n### <:link:1342486300653129811> **Downloads:** [${{ needs.setup.outputs.tag_name }}](${{ needs.package.outputs.url }})\n\n### Install via curl:\",
+                  \"color\": 955135,
+                  \"fields\": [
+                    {
+                      \"name\": \"For Linux:\",
+                      \"value\": \"```bash\ncd ./cs2/game\ncurl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2```\"
+                    },
+                    {
+                      \"name\": \"For Windows:\",
+                      \"value\": \"```bash\ncd ./cs2/game\ncurl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-win64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2```\"
+                    }
+                  ]
+                }
+              ]
+            }" \
+            -F "file1=@./build/linuxsteamrt64/${{ env.PROJECT_NAME }}-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2" \
+            -F "file2=@./build/win64/${{ env.PROJECT_NAME }}-build-win64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2" \
+            ${{ secrets.DISCORD_WEBHOOK }}
 
       - name: Send Failure Notification
         if: ${{ failure() }}
