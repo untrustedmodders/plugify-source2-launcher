@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.29](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.28...v2.0.29) (2025-11-14)
+
+
+### Bug Fixes
+
+* add check ([7550c64](https://github.com/untrustedmodders/plugify-source2-launcher/commit/7550c64ff74956c1827ccf5b4448870a308b23bc))
+* improve notify with multiline ([c99181a](https://github.com/untrustedmodders/plugify-source2-launcher/commit/c99181adb32c83002389e576a3b5b69afaf4cfe4))
+* improve notify with multiline ([a13e84c](https://github.com/untrustedmodders/plugify-source2-launcher/commit/a13e84ccacae755c3cc20dc7cffbee6ea8d504fa))
+* new design for discord notify ([e8bf467](https://github.com/untrustedmodders/plugify-source2-launcher/commit/e8bf46792790d52eb4f091f185b7ba37e025a857))
+* replace checker ([ea66853](https://github.com/untrustedmodders/plugify-source2-launcher/commit/ea668537466612c30574b2d272ff6b94494f2ac8))
+* update deps ([c026bee](https://github.com/untrustedmodders/plugify-source2-launcher/commit/c026bee3a87a1da2a7a30ec3b48fbff8f2884d90))
+
 ## [2.0.28](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.27...v2.0.28) (2025-11-06)
 
 
