@@ -173,9 +173,9 @@ jobs:
       with:
         webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
         embed-description: |
-          ## <:plugin_creator:1336096248515657880> **New Release: ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}**
+          ## <:plugin_creator:1336096248515657880> New Release: ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}
 
-          ### <:link:1342486300653129811> **Downloads:** [${{ needs.setup.outputs.tag_name }}](${{ needs.package.outputs.url }})
+          ### <:link:1342486300653129811> Downloads: [${{ needs.setup.outputs.tag_name }}](${{ needs.package.outputs.url }})
 
           ### Install via curl:
           **For Linux:**
