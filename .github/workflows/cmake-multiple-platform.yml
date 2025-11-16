@@ -167,35 +167,35 @@ jobs:
     if: ${{ needs.setup.outputs.release_created && always() }}
     runs-on: ubuntu-latest
     steps:
-    - name: Send Discord Notification
-      if: ${{ needs.build.result == 'success' && needs.package.result == 'success' }}
-      uses: tsickert/discord-webhook@v7.0.0
-      with:
-        webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
-        embed-description: |
-          ## <:plugin_creator:1336096248515657880> New Release: ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}
-
-          ### <:link:1342486300653129811> Downloads: [${{ needs.setup.outputs.tag_name }}](${{ needs.package.outputs.url }})
-
-          ### Install via curl:
-          **For Linux:**
-          ```bash
-          cd ./cs2/game
-          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
-          ```
-
-          **For Windows:**
-          ```bash
-          cd ./cs2/game
-          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-win64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
-          ```
-        embed-color: 955135
-
-    - name: Send Failure Notification
-      if: ${{ needs.build.result == 'failure' || needs.package.result == 'failure' }}
-      uses: tsickert/discord-webhook@v7.0.0
-      with:
-        webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
-        embed-description: |
-          ## <a:cry:1247121995997384738> Release workflow failed for ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}
-        embed-color: 16221227
+      - name: Send Discord Notification
+        if: ${{ needs.build.result == 'success' && needs.package.result == 'success' }}
+        uses: tsickert/discord-webhook@v7.0.0
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
+          embed-description: |
+            ## <:plugin_creator:1336096248515657880> New Release: ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}
+      
+            ### <:link:1342486300653129811> Downloads: [${{ needs.setup.outputs.tag_name }}](${{ needs.package.outputs.url }})
+      
+            ### Install via curl:
+            **For Linux:**
+            ```bash
+            cd ./cs2/game
+            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
+            ```
+      
+            **For Windows:**
+            ```bash
+            cd ./cs2/game
+            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-win64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
+            ```
+          embed-color: 955135
+      
+      - name: Send Failure Notification
+        if: ${{ needs.build.result == 'failure' || needs.package.result == 'failure' }}
+        uses: tsickert/discord-webhook@v7.0.0
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
+          embed-description: |
+            ## <a:cry:1247121995997384738> Release workflow failed for ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}
+          embed-color: 16221227
