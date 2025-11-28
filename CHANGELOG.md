@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.31](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.30...v2.0.31) (2025-11-28)
+
+
+### Bug Fixes
+
+* notify trigger ([5e620a6](https://github.com/untrustedmodders/plugify-source2-launcher/commit/5e620a6c2921dde3570cb0e0865184ee8312c55e))
+* typo in notify ([0fc96fb](https://github.com/untrustedmodders/plugify-source2-launcher/commit/0fc96fbb596617853472d644b5c1152a36cd37a0))
+* update deps ([58bacee](https://github.com/untrustedmodders/plugify-source2-launcher/commit/58bacee2f17acfea45b910b4301e721ea5b62389))
+* update deps ([72dbbec](https://github.com/untrustedmodders/plugify-source2-launcher/commit/72dbbec194e895b99f41bc96fcf6fa3835010b80))
+* update notify ([89e74ee](https://github.com/untrustedmodders/plugify-source2-launcher/commit/89e74ee1ba47f5b09c31c13eb89dee71736bc543))
+
 ## [2.0.30](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.29...v2.0.30) (2025-11-14)
 
 
