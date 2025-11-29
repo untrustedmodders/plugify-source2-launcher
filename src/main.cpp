@@ -2358,12 +2358,7 @@ static ConCommand plg_command("plg", plugify_callback, "Plugify control options"
 static ConCommand pkg_command("plug", plugify_callback, "Micromamba control options", 0);
 
 CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
-	if (!s_plugify || !s_plugify->IsInitialized()) {
-		plg::print("{}: Initialize system before use.", Colorize("Error", Colors::RED));
-		return;
-	}
-
-	if (s_plugify->GetManager().IsInitialized()) {
+	if (s_plugify && s_plugify->IsInitialized() && s_plugify->GetManager().IsInitialized()) {
 		plg::print(
 			"{}: Package operations are only allowed when plugin manager is unloaded\n"
 			"Please run 'plugify unload' first.",
