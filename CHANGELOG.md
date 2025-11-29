@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.32](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.31...v2.0.32) (2025-11-29)
+
+
+### Bug Fixes
+
+* add creation of dir symlink to extensions for clarity ([60f24be](https://github.com/untrustedmodders/plugify-source2-launcher/commit/60f24bef1c6acb4eb9eea85db1ccd50bd8eb5a2f))
+* allow mamba to work when plugify failed ([106ee66](https://github.com/untrustedmodders/plugify-source2-launcher/commit/106ee6635ca9275eae1b0b752d1b6ff3b82f7a04))
+
 ## [2.0.31](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.30...v2.0.31) (2025-11-28)
 
 
