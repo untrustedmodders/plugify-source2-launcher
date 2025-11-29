@@ -2731,9 +2731,9 @@ private:
 	static Result<T*> FindInterface(CAppSystemDict* dict, std::string_view interfaceName) {
 		for (const auto& system : dict->m_Systems) {
 			if (system.m_pInterfaceName == interfaceName) {
-				if (auto* pCvar = static_cast<T*>(system.m_pSystem)) {
+				if (auto* pSystem = static_cast<T*>(system.m_pSystem)) {
 					plg::print("{}: Found {} interface", Colorize("Info", Colors::BLUE), interfaceName);
-					return pCvar;
+					return pSystem;
 				}
 			}
 		}
