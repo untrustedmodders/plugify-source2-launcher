@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.34](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.33...v2.0.34) (2025-12-03)
+
+
+### Bug Fixes
+
+* timing stats output ([e13aae4](https://github.com/untrustedmodders/plugify-source2-launcher/commit/e13aae49031c82f8551509e81ffc1fb4506b602b))
+* update deps ([2c5c0b3](https://github.com/untrustedmodders/plugify-source2-launcher/commit/2c5c0b3850bc4b26e1f1a1acdf464a4ad8d06faf))
+* update deps ([583d28f](https://github.com/untrustedmodders/plugify-source2-launcher/commit/583d28f58f76a33eabc9a77e0d56c79628a7093c))
+
 ## [2.0.33](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.32...v2.0.33) (2025-12-01)
 
 
