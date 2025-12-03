@@ -850,8 +850,8 @@ namespace {
 					    result = a->GetLanguage() < b->GetLanguage();
 					    break;
 				    case SortBy::LoadTime:
-					    result = a->GetOperationTime(ExtensionState::Loaded)
-					             < b->GetOperationTime(ExtensionState::Loaded);
+					    result = a->GetOperationTime(ExtensionState::Loading)
+					             < b->GetOperationTime(ExtensionState::Loading);
 					    break;
 			    }
 			    return reverse ? !result : result;
@@ -952,7 +952,7 @@ namespace {
 			warningCount += ext->GetWarnings().size();
 
 			// Check for slow loading (> 1 second)
-			auto loadTime = ext->GetOperationTime(ExtensionState::Loaded);
+			auto loadTime = ext->GetOperationTime(ExtensionState::Loading);
 			if (std::chrono::duration_cast<std::chrono::milliseconds>(loadTime).count() > 1000) {
 				++slowLoadCount;
 				report.warnings.push_back(
@@ -1166,7 +1166,7 @@ namespace {
 			// Get load time if available
 			std::string loadTime = "N/A";
 			try {
-				auto duration = plugin->GetOperationTime(ExtensionState::Loaded);
+				auto duration = plugin->GetOperationTime(ExtensionState::Loading);
 				if (duration.count() > 0) {
 					loadTime = FormatDuration(duration);
 				}
@@ -1272,7 +1272,7 @@ namespace {
 			// Get load time if available
 			std::string loadTime = "N/A";
 			try {
-				auto duration = module->GetOperationTime(ExtensionState::Loaded);
+				auto duration = module->GetOperationTime(ExtensionState::Loading);
 				if (duration.count() > 0) {
 					loadTime = FormatDuration(duration);
 				}
@@ -2158,8 +2158,8 @@ namespace {
 		plg::print(Colorize("\n[Performance]", Colors::ORANGE));
 		plg::print(
 		    "  Load Time:     {:<15} vs {:<15}",
-		    FormatDuration(ext1->GetOperationTime(ExtensionState::Loaded)),
-		    FormatDuration(ext2->GetOperationTime(ExtensionState::Loaded))
+		    FormatDuration(ext1->GetOperationTime(ExtensionState::Loading)),
+		    FormatDuration(ext2->GetOperationTime(ExtensionState::Loading))
 		);
 		plg::print(
 		    "  Total Time:    {:<15} vs {:<15}",
