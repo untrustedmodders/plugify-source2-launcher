@@ -15,9 +15,7 @@
 #include <cstdlib>
 #endif
 
-#include <client/crash_report_database.h>
-#include <client/crashpad_client.h>
-#include <client/settings.h>
+#include <sentry.h>
 
 #include <dynlibutils/module.hpp>
 #include <dynlibutils/virtual.hpp>
@@ -45,7 +43,6 @@
 #include <appframework/iappsystem.h>
 
 using namespace plugify;
-using namespace crashpad;
 namespace fs = std::filesystem;
 
 // Source2 color definitions
@@ -415,10 +412,10 @@ public:
 private:
 	bool _async;
 	std::atomic<bool> _running;
+	std::thread _worker_thread;
 	std::mutex _queue_mutex;
 	std::queue<std::string> _message_queue;
 	std::condition_variable _condition;
-	std::thread _worker_thread;
 	std::mutex _file_mutex;
 	std::ofstream _file;
 
@@ -444,8 +441,11 @@ private:
 	}
 
 	void Stop() {
-		_running = false;
-		_condition.notify_one();
+		{
+			std::lock_guard lock(_queue_mutex);  // Hold lock while notifying!
+			_running = false;
+			_condition.notify_one();
+		}
 		if (_worker_thread.joinable()) {
 			_worker_thread.join();
 		}
@@ -458,7 +458,7 @@ std::shared_ptr<Plugify> s_plugify;
 std::shared_ptr<ConsoleLoggger> s_logger;
 std::unique_ptr<FileLoggingListener> s_listener;
 PlugifyState s_state;
-bool s_crashpad;
+bool s_sentry;
 
 #define BASE_PATH PLUGIFY_PATH_LITERAL("" S2_GAME_NAME "/" "addons" "/" "plugify" "/")
 #define MAMBA_PATH BASE_PATH PLUGIFY_PATH_LITERAL("bin" "/" S2_BINARY "/" S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX)
@@ -2558,18 +2558,17 @@ static constexpr auto RWX_PERMS =
 		fs::perms::others_read |
 		fs::perms::others_exec;
 
-class CrashpadInitializer {
+class SentryInitializer {
 	struct Metadata {
-		std::string url;
-		std::string handlerApp;
+		std::string dsn;
 		std::string databaseDir;
-		std::string metricsDir;
 		std::string logsDir;
-		std::map<std::string, std::string> annotations;
-		std::vector<std::string> arguments;
+		std::string environment;
+		std::string release;
+		std::map<std::string, std::string> tags;
 		std::vector<std::string> attachments;
-		std::optional<bool> restartable;
-		std::optional<bool> asynchronous_start;
+		std::optional<double> sample_rate;
+		std::optional<bool> debug;
 		std::optional<bool> listen_console;
 		std::optional<bool> enabled;
 	};
@@ -2615,8 +2614,7 @@ class CrashpadInitializer {
 
 	static Result<std::unique_ptr<FileLoggingListener>> SetupConsoleLogging(
 	    const fs::path& exeDir,
-	    const fs::path& logsDir,
-	    std::vector<base::FilePath>& attachments
+	    const fs::path& logsDir
 	) {
 		auto logFile = exeDir / logsDir / FormatFileName("session", "log");
 
@@ -2625,16 +2623,11 @@ class CrashpadInitializer {
 			return MakeError("Failed to create console logger: {}", listener.error());
 		}
 
-		// Add console log as attachment with special prefix
-		fs::path attachmentPath = "console.log=";
-		attachmentPath += logFile.make_preferred();
-		attachments.emplace_back(attachmentPath);
-
 		return std::move(*listener);
 	}
 
 public:
-	static Result<std::unique_ptr<CrashpadClient>>
+	static Result<bool>
 	Initialize(const fs::path& exeDir, const fs::path& annotationsPath) {
 		// Load metadata
 		auto metadataResult = ReadJson<Metadata>(exeDir / annotationsPath);
@@ -2644,13 +2637,18 @@ public:
 
 		const auto& metadata = *metadataResult;
 
-		// Check if crashpad is enabled
+		// Check if sentry is enabled
 		if (!metadata.enabled.value_or(false)) {
-			return nullptr;
+			return false;
+		}
+
+		// Validate DSN
+		if (metadata.dsn.empty()) {
+			return MakeError("Sentry DSN is required but not provided");
 		}
 
 		// Validate handler executable
-		auto handlerResult = ValidateHandler(exeDir, metadata.handlerApp);
+		auto handlerResult = ValidateHandler(exeDir, "crashpad_handler");
 		if (!handlerResult) {
 			return MakeError(std::move(handlerResult.error()));
 		}
@@ -2661,58 +2659,81 @@ public:
 			return MakeError(std::move(databaseResult.error()));
 		}
 
-		auto metricsResult = EnsureDirectory(exeDir / metadata.metricsDir, "metrics");
-		if (!metricsResult) {
-			return MakeError(std::move(metricsResult.error()));
+		// Create Sentry options
+		sentry_options_t* options = sentry_options_new();
+
+		sentry_options_set_transport()
+
+
+		// Set DSN
+		sentry_options_set_dsn(options, metadata.dsn.c_str());
+
+		// Set database path
+		sentry_options_set_database_path(options, plg::as_string(*databaseResult).c_str());
+
+		// Set environment if provided
+		if (!metadata.environment.empty()) {
+			sentry_options_set_environment(options, metadata.environment.c_str());
 		}
 
-		// Initialize database
-		base::FilePath databaseDir(*databaseResult);
-		auto database = CrashReportDatabase::Initialize(databaseDir);
-		if (!database) {
-			return MakeError("Failed to initialize crash database");
+		// Set release if provided
+		if (!metadata.release.empty()) {
+			sentry_options_set_release(options, metadata.release.c_str());
 		}
 
-		// Configure upload settings
-		database->GetSettings()->SetUploadsEnabled(!metadata.url.empty());
+		// Set sample rate
+		if (metadata.sample_rate.has_value()) {
+			sentry_options_set_sample_rate(options, metadata.sample_rate.value());
+		} else {
+			sentry_options_set_sample_rate(options, 1.0); // 100% by default
+		}
 
-		// Prepare attachments
-		std::vector<base::FilePath> attachments;
-		attachments.reserve(metadata.attachments.size());
-
-		for (const auto& attachment : metadata.attachments) {
-			attachments.emplace_back(exeDir / attachment);
+		// Enable debug mode if requested
+		if (metadata.debug.value_or(false)) {
+			sentry_options_set_debug(options, 1);
 		}
 
 		// Setup console logging if requested
+		fs::path logFile;
 		if (metadata.listen_console.value_or(false)) {
-			auto listenerResult = SetupConsoleLogging(exeDir, metadata.logsDir, attachments);
+			auto listenerResult = SetupConsoleLogging(exeDir, metadata.logsDir);
 			if (!listenerResult) {
 				return MakeError(std::move(listenerResult.error()));
 			} else {
 				s_listener = std::move(*listenerResult);
+				logFile = exeDir / metadata.logsDir / FormatFileName("session", "log");
 			}
 		}
 
-		// Start crash handler
-		auto client = std::make_unique<CrashpadClient>();
-		bool started = client->StartHandler(
-		    base::FilePath(*handlerResult),
-		    databaseDir,
-		    base::FilePath(*metricsResult),
-		    metadata.url,
-		    metadata.annotations,
-		    metadata.arguments,
-		    metadata.restartable.value_or(false),
-		    metadata.asynchronous_start.value_or(false),
-		    attachments
-		);
-
-		if (!started) {
-			return MakeError("Failed to start Crashpad handler");
+		// Initialize Sentry
+		if (sentry_init(options) != 0) {
+			return MakeError("Failed to initialize Sentry");
 		}
 
-		return client;
+		// Set custom tags
+		for (const auto& [key, value] : metadata.tags) {
+			sentry_set_tag(key.c_str(), value.c_str());
+		}
+
+		// Add log file as attachment after init
+		if (!logFile.empty()) {
+			sentry_attach_file(plg::as_string(logFile).c_str());
+		}
+
+		// Add custom attachments
+		for (const auto& attachment : metadata.attachments) {
+			fs::path attachmentPath = exeDir / attachment;
+			std::error_code ec;
+			if (fs::exists(attachmentPath, ec)) {
+				sentry_attach_file(plg::as_string(attachmentPath).c_str());
+			}
+		}
+
+		return true;
+	}
+
+	static void Shutdown() {
+		sentry_close();
 	}
 };
 
@@ -2797,7 +2818,8 @@ private:
 		}
 
 		SetMiniDumpHandler([](MiniDumpHandlerData_t* data) {
-			CrashpadClient::DumpAndCrash(data->pExceptionPointers);
+			sentry_ucontext_t ctx{ .exception_ptrs = *data->pExceptionPointers };
+			sentry_handle_exception(&ctx);
 		}, true);
 
 		plg::print("{}: Crash handler registered", Colorize("Info", Colors::GREEN));
@@ -2873,11 +2895,11 @@ public:
 			LoggingSystem_RegisterLoggingListener(s_listener.get());
 		}
 
-		// Notify about crashpad
+		// Notify about sentry
 		plg::print(
-		    "{}: Crashpad {} in configuration",
+		    "{}: Sentry {} in configuration",
 		    Colorize("Info", Colors::BLUE),
-		    Colorize(s_crashpad ? "enabled" : "disabled", Colors::MAGENTA)
+		    Colorize(s_sentry ? "enabled" : "disabled", Colors::MAGENTA)
 		);
 
 		// Find ICvar interface
@@ -2895,7 +2917,7 @@ public:
 		}
 
 #if S2_PLATFORM_WINDOWS
-		if (s_crashpad) {
+		if (s_sentry) {
 			// Setup crash handler
 			if (auto crashResult = SetupCrashHandler(); !crashResult) {
 				plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), crashResult.error());
@@ -2994,13 +3016,13 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (!std::is_debugger_present()) {
-		auto result = CrashpadInitializer::Initialize(binary_path, "crashpad.jsonc");
+		auto result = SentryInitializer::Initialize(binary_path, "sentry.jsonc");
 		if (!result) {
-			std::println(std::cerr, "Crashpad error: {}", result.error());
+			std::println(std::cerr, "Sentry error: {}", result.error());
 			return 1;
 		}
 
-		s_crashpad = true;
+		s_sentry = *result;
 	}
 
 	auto engine_path = binary_path / S2_LIBRARY_PREFIX "engine2" S2_LIBRARY_SUFFIX;
@@ -3040,6 +3062,11 @@ int main(int argc, char* argv[]) {
 
 	if (s_listener) {
 		LoggingSystem_PopLoggingState();
+	}
+
+	// Shutdown Sentry if it was initialized
+	if (s_sentry) {
+		SentryInitializer::Shutdown();
 	}
 
 	s_ServerGamePostSimulate.Unhook();

@@ -1,0 +1,18 @@
+{
+  "dsn": "https://your-sentry-dsn@sentry.io/your-project-id",
+  "databaseDir": "../../${S2_GAME_NAME}/addons/plugify/crashes",
+  "logsDir": "../../${S2_GAME_NAME}/addons/plugify/logs/sessions",
+  "environment": "production",
+  "release": "${S2_VERSION}",
+  "tags": {
+    "product": "${PROJECT_DESCRIPTION}",
+    "version": "${S2_VERSION}",
+    "game": "${S2_GAME_NAME}"
+  },
+  "attachments": [
+  ],
+  "sample_rate": 1.0,
+  "debug": false,
+  "listen_console": true,
+  "enabled": false
+}

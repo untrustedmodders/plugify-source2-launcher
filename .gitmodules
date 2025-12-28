@@ -7,3 +7,6 @@
 [submodule "external/dynlibutils"]
 	path = external/dynlibutils
 	url = https://github.com/Wend4r/cpp-dynlibutils.git
+[submodule "external/sentry"]
+	path = external/sentry
+	url = https://github.com/getsentry/sentry-native.git

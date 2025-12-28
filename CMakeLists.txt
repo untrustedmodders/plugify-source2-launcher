@@ -30,10 +30,10 @@ project(plugify-source2-launcher
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS OFF)
+set(CMAKE_C_EXTENSIONS ON)
 #set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
@@ -77,6 +77,21 @@ set(DYNLIBUTILS_USE_ABI0 OFF CACHE INTERNAL "")
 add_subdirectory(external/dynlibutils)
 
 #
+# Sentry
+#
+add_subdirectory(external/sentry)
+if(LINUX)
+    file(GENERATE
+            OUTPUT "${CMAKE_BINARY_DIR}/pch.h"
+            CONTENT "#pragma once\n#include <ucontext.h>\n#include <stdlib.h>\n#include <locale.h>\n#include <dlfcn.h>\n#include <pthread.h>\n"
+    )
+    target_precompile_headers(sentry PRIVATE "${CMAKE_BINARY_DIR}/pch.h")
+    target_compile_definitions(sentry PRIVATE _GNU_SOURCE)
+
+    target_include_directories(sentry SYSTEM PRIVATE external/sentry/external/crashpad/compat/linux)
+endif()
+
+#
 # Main
 #
 file(GLOB_RECURSE SOURCE_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "src/*.cpp")
@@ -86,12 +101,11 @@ add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 #
 # Dependencies
 #
-include(FetchCrashPad)
 include(FetchCLI)
 include(FetchReproc)
 find_package(Threads REQUIRED)
 
-set(S2_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ crashpad_client cpp-memory_utils CLI11 sourcesdk::sourcesdk)
+set(S2_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ cpp-memory_utils CLI11 sentry::sentry sourcesdk::sourcesdk)
 
 if(NOT COMPILER_SUPPORTS_FORMAT)
     #set(S2_LINK_LIBRARIES ${S2_LINK_LIBRARIES} fmt::fmt-header-only)
@@ -186,6 +200,6 @@ configure_file(
 )
 
 configure_file(
-        ${CMAKE_SOURCE_DIR}/crashpad.jsonc.in
-        ${CMAKE_BINARY_DIR}/crashpad.jsonc
+        ${CMAKE_SOURCE_DIR}/sentry.jsonc.in
+        ${CMAKE_BINARY_DIR}/sentry.jsonc
 )

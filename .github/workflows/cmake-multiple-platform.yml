@@ -115,9 +115,10 @@ jobs:
         run: |
           mkdir -p build/output/bin/${{ matrix.platform }}/
           cp build/external/plugify/*plugify.* build/output/bin/${{ matrix.platform }}/
+          cp build/external/sentry/*sentry.* build/output/bin/${{ matrix.platform }}/
           cp build/s2launcher* build/output/bin/${{ matrix.platform }}/
-          cp build/crashpad_handler build/output/bin/${{ matrix.platform }}/
-          cp build/crashpad.jsonc build/output/bin/${{ matrix.platform }}/
+          cp build/external/sentry/crashpad_build/handler/crashpad_handler build/output/bin/${{ matrix.platform }}/
+          cp build/sentry.jsonc build/output/bin/${{ matrix.platform }}/
           mkdir -p build/output/csgo/addons/plugify/bin/${{ matrix.platform }}/
           cp build/micromamba* build/output/csgo/addons/plugify/bin/${{ matrix.platform }}/
           # cp build/plugify.pconfig build/output/csgo
