@@ -3206,13 +3206,12 @@ int main(int argc, char* argv[]) {
 		binary_path /= "bin/" S2_BINARY;
 	}
 
-	if (true/*!std::is_debugger_present()*/) {
+	if (!std::is_debugger_present()) {
 		auto result = SentryInitializer::Initialize(binary_path, "sentry.jsonc");
 		if (!result) {
 			std::println(std::cerr, "Sentry error: {}", result.error());
 			return 1;
 		}
-
 		s_sentry = *result;
 	}
 
@@ -3255,7 +3254,6 @@ int main(int argc, char* argv[]) {
 		LoggingSystem_PopLoggingState();
 	}
 
-	// Shutdown Sentry if it was initialized
 	if (s_sentry) {
 		SentryInitializer::Shutdown();
 	}
