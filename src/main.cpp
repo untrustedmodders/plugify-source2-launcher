@@ -442,7 +442,7 @@ private:
 
 	void Stop() {
 		{
-			std::lock_guard lock(_queue_mutex);  // Hold lock while notifying!
+			std::lock_guard lock(_queue_mutex);
 			_running = false;
 			_condition.notify_one();
 		}
@@ -716,7 +716,7 @@ namespace {
 			return false;
 		}
 
-		if (filter.states.has_value()) {
+		if (filter.states) {
 			auto state = ext->GetState();
 			if (std::find(filter.states->begin(), filter.states->end(), state)
 			    == filter.states->end()) {
@@ -724,7 +724,7 @@ namespace {
 			}
 		}
 
-		if (filter.languages.has_value()) {
+		if (filter.languages) {
 			const auto& lang = ext->GetLanguage();
 			if (std::find(filter.languages->begin(), filter.languages->end(), lang)
 			    == filter.languages->end()) {
@@ -732,8 +732,8 @@ namespace {
 			}
 		}
 
-		if (filter.searchQuery.has_value()) {
-			std::string query = filter.searchQuery.value();
+		if (filter.searchQuery) {
+			std::string query = filter.searchQuery;
 			std::transform(query.begin(), query.end(), query.begin(), ::tolower);
 
 			std::string name = ext->GetName();
@@ -1199,8 +1199,8 @@ namespace {
 		plg::print(SEPARATOR_LINE);
 
 		// Summary
-		if (filter.states.has_value() || filter.languages.has_value()
-		    || filter.searchQuery.has_value() || filter.showOnlyFailed) {
+		if (filter.states || filter.languages
+		    || filter.searchQuery || filter.showOnlyFailed) {
 			plg::print(
 			    "{}",
 			    Colorize(
@@ -1305,8 +1305,8 @@ namespace {
 		plg::print(SEPARATOR_LINE);
 
 		// Summary
-		if (filter.states.has_value() || filter.languages.has_value()
-		    || filter.searchQuery.has_value() || filter.showOnlyFailed) {
+		if (filter.states || filter.languages
+		    || filter.searchQuery || filter.showOnlyFailed) {
 			plg::print(
 			    "{}",
 			    Colorize(
@@ -2561,20 +2561,43 @@ static constexpr auto RWX_PERMS =
 class SentryInitializer {
 	struct Metadata {
 		std::string dsn;
-		std::string databaseDir;
-		std::string logsDir;
-		std::string environment;
-		std::string release;
-		std::map<std::string, std::string> tags;
-		std::vector<std::string> attachments;
+		std::filesystem::path database_path;
+		std::filesystem::path logs_path;
+		std::optional<std::string> environment;
+		std::optional<std::string> release;
+		std::optional<std::string> dist;
+		std::optional<std::string> proxy;
+		std::optional<std::string> ca_certs;
+		std::optional<std::string> transport_thread_name;
+		std::optional<std::filesystem::path> handler_path;
+		std::optional<std::filesystem::path> external_crash_reporter_path;
+		std::optional<std::map<std::string, std::string>> tags;
+		std::optional<std::vector<std::filesystem::path>> attachments;
 		std::optional<double> sample_rate;
+		std::optional<double> traces_sample_rate;
+		std::optional<size_t> max_breadcrumbs;
+		std::optional<size_t> max_spans;
+		std::optional<uint64_t> shutdown_timeout;
 		std::optional<bool> debug;
 		std::optional<bool> listen_console;
+		std::optional<bool> auto_session_tracking;
+		std::optional<bool> require_user_consent;
+		std::optional<bool> symbolize_stacktraces;
+		std::optional<bool> system_crash_reporter_enabled;
+		std::optional<bool> enable_logging_when_crashed;
+		std::optional<bool> propagate_traceparent;
+		std::optional<bool> crashpad_wait_for_upload;
+		std::optional<bool> crashpad_limit_stack_capture_to_sp;
+		std::optional<bool> attach_screenshot;
+		std::optional<bool> enable_logs;
+		std::optional<sentry_level_t> logger_level;
+		std::optional<bool> logs_with_attributes;
 		std::optional<bool> enabled;
 	};
 
-	static Result<fs::path> ValidateHandler(const fs::path& exeDir, std::string_view handlerName) {
-		fs::path handlerPath = exeDir / std::format(S2_EXECUTABLE_PREFIX "{}" S2_EXECUTABLE_SUFFIX, handlerName);
+	static Result<fs::path> ValidateHandler(const fs::path& exeDir, const fs::path& handlerFile) {
+		fs::path handlerPath = exeDir / handlerFile;
+		handlerPath.replace_filename(std::format(S2_EXECUTABLE_PREFIX "{}" S2_EXECUTABLE_SUFFIX, handlerFile.filename().string()));
 
 		std::error_code ec;
 		if (!fs::exists(handlerPath, ec)) {
@@ -2583,7 +2606,7 @@ class SentryInitializer {
 
 		fs::permissions(handlerPath, RWX_PERMS, fs::perm_options::replace, ec);
 		if (ec) {
-			return MakeError("Failed to set {} handler permissions: {}", handlerName, ec.message());
+			return MakeError("Failed to set {} handler permissions: {}", plg::as_string(handlerPath), ec.message());
 		}
 
 		return handlerPath;
@@ -2612,27 +2635,13 @@ class SentryInitializer {
 		return dirPath;
 	}
 
-	static Result<std::unique_ptr<FileLoggingListener>> SetupConsoleLogging(
-	    const fs::path& exeDir,
-	    const fs::path& logsDir
-	) {
-		auto logFile = exeDir / logsDir / FormatFileName("session", "log");
-
-		auto listener = FileLoggingListener::Create(logFile);
-		if (!listener) {
-			return MakeError("Failed to create console logger: {}", listener.error());
-		}
-
-		return std::move(*listener);
-	}
-
 public:
 	static Result<bool>
 	Initialize(const fs::path& exeDir, const fs::path& annotationsPath) {
 		// Load metadata
 		auto metadataResult = ReadJson<Metadata>(exeDir / annotationsPath);
 		if (!metadataResult) {
-			return MakeError("Failed to load metadata: {}", metadataResult.error());
+			return MakeError(std::move(metadataResult.error()));
 		}
 
 		const auto& metadata = *metadataResult;
@@ -2648,13 +2657,13 @@ public:
 		}
 
 		// Validate handler executable
-		auto handlerResult = ValidateHandler(exeDir, "crashpad_handler");
+		auto handlerResult = ValidateHandler(exeDir, metadata.handler_path.value_or("crashpad_handler"));
 		if (!handlerResult) {
 			return MakeError(std::move(handlerResult.error()));
 		}
 
 		// Setup directories
-		auto databaseResult = EnsureDirectory(exeDir / metadata.databaseDir, "database");
+		auto databaseResult = EnsureDirectory(exeDir / metadata.database_path, "database");
 		if (!databaseResult) {
 			return MakeError(std::move(databaseResult.error()));
 		}
@@ -2662,71 +2671,200 @@ public:
 		// Create Sentry options
 		sentry_options_t* options = sentry_options_new();
 
-		sentry_options_set_transport()
-
-
 		// Set DSN
 		sentry_options_set_dsn(options, metadata.dsn.c_str());
 
+#if S2_PLATFORM_WINDOWS
+#define sentry_pcall(fn, options, path) fn##w_n(options, path.c_str(), path.size())
+#else
+#define sentry_pcall(fn, options, path) fn_n(options, path.c_str(), path.size())
+#endif
+
 		// Set database path
-		sentry_options_set_database_path(options, plg::as_string(*databaseResult).c_str());
+		sentry_pcall(sentry_options_set_database_path, options, databaseResult->native());
+
+		// Set handler path
+		sentry_pcall(sentry_options_set_handler_path, options, handlerResult->native());
 
 		// Set environment if provided
-		if (!metadata.environment.empty()) {
-			sentry_options_set_environment(options, metadata.environment.c_str());
+		if (metadata.environment) {
+			sentry_options_set_environment_n(options, metadata.environment->c_str(), metadata.environment->size());
 		}
 
 		// Set release if provided
-		if (!metadata.release.empty()) {
-			sentry_options_set_release(options, metadata.release.c_str());
+		if (metadata.release) {
+			sentry_options_set_release_n(options, metadata.release->c_str(), metadata.release->size());
+		}
+
+		// Set dist if provided
+		if (metadata.dist) {
+			sentry_options_set_dist_n(options, metadata.dist->c_str(), metadata.dist->size());
+		}
+
+		// Set proxy if provided
+		if (metadata.proxy) {
+			sentry_options_set_proxy_n(options, metadata.proxy->c_str(), metadata.proxy->size());
+		}
+
+		// Set CA certs if provided
+		if (metadata.ca_certs) {
+			sentry_options_set_ca_certs_n(options, metadata.ca_certs->c_str(), metadata.ca_certs->size());
+		}
+
+		// Set transport thread name if provided
+		if (metadata.transport_thread_name) {
+			sentry_options_set_transport_thread_name_n(options, metadata.transport_thread_name->c_str(), metadata.transport_thread_name->size());
 		}
 
 		// Set sample rate
-		if (metadata.sample_rate.has_value()) {
-			sentry_options_set_sample_rate(options, metadata.sample_rate.value());
-		} else {
-			sentry_options_set_sample_rate(options, 1.0); // 100% by default
+		if (metadata.sample_rate) {
+			sentry_options_set_sample_rate(options, *metadata.sample_rate);
+		}
+
+		// Set traces sample rate
+		if (metadata.traces_sample_rate) {
+			sentry_options_set_traces_sample_rate(options, *metadata.traces_sample_rate);
+		}
+
+		// Set max breadcrumbs
+		if (metadata.max_breadcrumbs) {
+			sentry_options_set_max_breadcrumbs(options, *metadata.max_breadcrumbs);
+		}
+
+		// Set max spans
+		if (metadata.max_spans) {
+			sentry_options_set_max_spans(options, *metadata.max_spans);
+		}
+
+		// Set shutdown timeout
+		if (metadata.shutdown_timeout) {
+			sentry_options_set_shutdown_timeout(options, *metadata.shutdown_timeout);
 		}
 
 		// Enable debug mode if requested
-		if (metadata.debug.value_or(false)) {
-			sentry_options_set_debug(options, 1);
+		if (metadata.debug) {
+			sentry_options_set_debug(options, *metadata.debug);
+		}
+
+		// Set auto session tracking
+		if (metadata.auto_session_tracking) {
+			sentry_options_set_auto_session_tracking(options, *metadata.auto_session_tracking);
+		}
+
+		// Set require user consent
+		if (metadata.require_user_consent) {
+			sentry_options_set_require_user_consent(options, *metadata.require_user_consent);
+		}
+
+		// Set symbolize stacktraces
+		if (metadata.symbolize_stacktraces) {
+			sentry_options_set_symbolize_stacktraces(options, *metadata.symbolize_stacktraces);
+		}
+
+		// Set system crash reporter enabled
+		if (metadata.system_crash_reporter_enabled) {
+			sentry_options_set_system_crash_reporter_enabled(options, *metadata.system_crash_reporter_enabled);
+		}
+
+		// Set enable logging when crashed
+		if (metadata.enable_logging_when_crashed) {
+			sentry_options_set_logger_enabled_when_crashed(options, *metadata.enable_logging_when_crashed);
+		}
+
+		// Set propagate traceparent
+		if (metadata.propagate_traceparent) {
+			sentry_options_set_propagate_traceparent(options, *metadata.propagate_traceparent);
+		}
+
+		// Set crashpad wait for upload
+		if (metadata.crashpad_wait_for_upload) {
+			sentry_options_set_crashpad_wait_for_upload(options, *metadata.crashpad_wait_for_upload);
+		}
+
+		// Set crashpad limit stack capture to SP
+		if (metadata.crashpad_limit_stack_capture_to_sp) {
+			sentry_options_set_crashpad_limit_stack_capture_to_sp(options, *metadata.crashpad_limit_stack_capture_to_sp);
+		}
+
+		// Set attach screenshot
+		if (metadata.attach_screenshot) {
+			sentry_options_set_attach_screenshot(options, *metadata.attach_screenshot);
+		}
+
+		// Set enable logs
+		if (metadata.enable_logs) {
+			sentry_options_set_enable_logs(options, *metadata.enable_logs);
+		}
+
+		// Set logger
+		if (*metadata.logger_level) {
+			sentry_options_set_logger(options, []([[maybe_unused]] sentry_level_t level, const char* message, va_list args, [[maybe_unused]] void *userdata) {
+				char messageBuffer[2048];
+				std::vsnprintf(messageBuffer, sizeof(messageBuffer), message, args);
+				plg::print(messageBuffer);
+			}, nullptr);
+			sentry_options_set_logger_level(options, *metadata.logger_level);
+		}
+
+		// Set logs with attributes
+		if (metadata.logs_with_attributes) {
+			sentry_options_set_logs_with_attributes(options, *metadata.logs_with_attributes);
+		}
+
+		// Set external crash reporter path
+		if (metadata.external_crash_reporter_path) {
+			sentry_pcall(sentry_options_set_external_crash_reporter_path, options, metadata.external_crash_reporter_path->native());
+		}
+
+		// Set custom tags
+		if (metadata.tags) {
+			for (const auto& [key, value] : *metadata.tags) {
+				sentry_set_tag_n(key.c_str(), key.size(), value.c_str(), value.size());
+			}
 		}
 
 		// Setup console logging if requested
-		fs::path logFile;
+		std::optional<fs::path> logPath;
 		if (metadata.listen_console.value_or(false)) {
-			auto listenerResult = SetupConsoleLogging(exeDir, metadata.logsDir);
+			auto logFile = exeDir / metadata.logs_path / FormatFileName("session", "log");
+			auto listenerResult = FileLoggingListener::Create(logFile);
 			if (!listenerResult) {
 				return MakeError(std::move(listenerResult.error()));
 			} else {
 				s_listener = std::move(*listenerResult);
-				logFile = exeDir / metadata.logsDir / FormatFileName("session", "log");
+				logPath = std::move(logFile);
 			}
 		}
+
+#undef sentry_call
+
+#if S2_PLATFORM_WINDOWS
+#define sentry_pcall(fn, path) fn##w_n(path.c_str(), path.size())
+#else
+#define sentry_pcall(fn, path) fn_n(path.c_str(), path.size())
+#endif
+
+		// Add log file as attachment after init
+		if (logPath) {
+			sentry_pcall(sentry_attach_file, logPath->native());
+		}
+
+		// Add custom attachments
+		if (metadata.attachments) {
+			for (const auto& attachment : *metadata.attachments) {
+				fs::path attachmentPath = exeDir / attachment;
+				std::error_code ec;
+				if (fs::exists(attachmentPath, ec)) {
+					sentry_pcall(sentry_attach_file, attachmentPath.native());
+				}
+			}
+		}
+
+#undef sentry_call
 
 		// Initialize Sentry
 		if (sentry_init(options) != 0) {
 			return MakeError("Failed to initialize Sentry");
-		}
-
-		// Set custom tags
-		for (const auto& [key, value] : metadata.tags) {
-			sentry_set_tag(key.c_str(), value.c_str());
-		}
-
-		// Add log file as attachment after init
-		if (!logFile.empty()) {
-			sentry_attach_file(plg::as_string(logFile).c_str());
-		}
-
-		// Add custom attachments
-		for (const auto& attachment : metadata.attachments) {
-			fs::path attachmentPath = exeDir / attachment;
-			std::error_code ec;
-			if (fs::exists(attachmentPath, ec)) {
-				sentry_attach_file(plg::as_string(attachmentPath).c_str());
-			}
 		}
 
 		return true;
@@ -2736,6 +2874,42 @@ public:
 		sentry_close();
 	}
 };
+
+namespace glz {
+	template <>
+	struct meta<sentry_level_t> {
+		static constexpr auto value = enumerate(
+			"trace",   SENTRY_LEVEL_TRACE,
+			"debug",   SENTRY_LEVEL_DEBUG,
+			"info",    SENTRY_LEVEL_INFO,
+			"warning", SENTRY_LEVEL_WARNING,
+			"error",   SENTRY_LEVEL_ERROR,
+			"fatal",   SENTRY_LEVEL_FATAL
+		);
+	};
+
+	// std::filesystem::path
+	template <>
+	struct from<JSON, std::filesystem::path> {
+		template <auto Opts>
+		static void op(std::filesystem::path& value, auto&&... args) {
+			std::string str;
+			parse<JSON>::op<Opts>(str, args...);
+			value = str;
+			if (!value.empty()) {
+				value.make_preferred();
+			}
+		}
+	};
+
+	template <>
+	struct to<JSON, std::filesystem::path> {
+		template <auto Opts>
+		static void op(const std::filesystem::path& value, auto&&... args) noexcept {
+			serialize<JSON>::op<Opts>(value.generic_string(), args...);
+		}
+	};
+}
 
 std::unique_ptr<DynLibUtils::CModule> s_engine;
 DynLibUtils::CVTFHookAuto<&IHostStateMgr::RequestHS_Quit> s_HostStateMgrQuit;

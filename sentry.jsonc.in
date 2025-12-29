@@ -1,18 +1,78 @@
 {
+  // Required: Sentry DSN (Data Source Name)
   "dsn": "https://your-sentry-dsn@sentry.io/your-project-id",
-  "databaseDir": "../../${S2_GAME_NAME}/addons/plugify/crashes",
-  "logsDir": "../../${S2_GAME_NAME}/addons/plugify/logs/sessions",
+
+  // Required: Directory paths
+  "database_path": "../../${S2_GAME_NAME}/addons/plugify/crashes",
+  "logs_path": "../../${S2_GAME_NAME}/addons/plugify/logs/sessions",
+
+  // Basic release identification
   "environment": "production",
   "release": "${S2_VERSION}",
+
+  // Custom tags
   "tags": {
     "product": "${PROJECT_DESCRIPTION}",
     "version": "${S2_VERSION}",
     "game": "${S2_GAME_NAME}"
   },
+
+  // Custom attachments
   "attachments": [
   ],
+
+  // Sampling rate (0.0 to 1.0)
   "sample_rate": 1.0,
+
+  // Debug and logging
   "debug": false,
   "listen_console": true,
+
+  // Enable/disable Sentry
   "enabled": false
+
+  // Advanced options (uncomment to use):
+
+  // Release distribution identifier
+  // "dist": "",
+
+  // Network configuration
+  // "proxy": "",
+  // "ca_certs": "",
+  // "transport_thread_name": "",
+
+  // Custom handler path (defaults to crashpad_handler if not specified)
+  // "handler_path": "",
+
+  // Tracing sample rate (0.0 to 1.0)
+  // "traces_sample_rate": 0.0,
+
+  // Limits
+  // "max_breadcrumbs": 100,
+  // "max_spans": 1000,
+  // "shutdown_timeout": 2000,
+
+  // Logging options
+  // "enable_logging_when_crashed": true,
+
+  // Session tracking
+  // "auto_session_tracking": true,
+  // "require_user_consent": false,
+
+  // Stack trace processing
+  // "symbolize_stacktraces": false,
+
+  // Crash reporter options
+  // "system_crash_reporter_enabled": false,
+  // "crashpad_wait_for_upload": false,
+  // "crashpad_limit_stack_capture_to_sp": false,
+
+  // Additional features
+  // "attach_screenshot": false,
+  // "propagate_traceparent": false,
+
+  // Logging integration
+  // "enable_logs": false,
+  // "logger_level": "debug",
+  // "logs_with_attributes": false
 }
