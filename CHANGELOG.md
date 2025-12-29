@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.1.0](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.34...v2.1.0) (2025-12-29)
+
+
+### Features
+
+* replace crashpad by sentry ([45b337b](https://github.com/untrustedmodders/plugify-source2-launcher/commit/45b337b47fd05cfafe599e618f2eaeb694692e99))
+
+
+### Bug Fixes
+
+* imrpove FileLoggingListener ([e89200a](https://github.com/untrustedmodders/plugify-source2-launcher/commit/e89200a81b7395ef26e5e9febc27443d2a4bd827))
+* linux build ([dac3543](https://github.com/untrustedmodders/plugify-source2-launcher/commit/dac354340368af77c6ba2131e416f5297bd1ab5a))
+* more improvement for sentry ([901565f](https://github.com/untrustedmodders/plugify-source2-launcher/commit/901565f7d6d0d38dc31f5cd4ebee9a0f48909019))
+
 ## [2.0.34](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.33...v2.0.34) (2025-12-03)
 
 
