@@ -2602,12 +2602,12 @@ class SentryInitializer {
 		std::optional<bool> symbolize_stacktraces;
 		std::optional<bool> system_crash_reporter_enabled;
 		std::optional<bool> enable_logging_when_crashed;
+		std::optional<sentry_level_t> logger_level;
 		std::optional<bool> propagate_traceparent;
 		std::optional<bool> crashpad_wait_for_upload;
 		std::optional<bool> crashpad_limit_stack_capture_to_sp;
 		std::optional<bool> attach_screenshot;
 		std::optional<bool> enable_logs;
-		std::optional<sentry_level_t> logger_level;
 		std::optional<bool> logs_with_attributes;
 		std::optional<bool> enabled;
 	};
@@ -2694,7 +2694,7 @@ public:
 #if S2_PLATFORM_WINDOWS
 #define sentry_pcall(fn, options, path) fn##w_n(options, path.c_str(), path.size())
 #else
-#define sentry_pcall(fn, options, path) fn_n(options, path.c_str(), path.size())
+#define sentry_pcall(fn, options, path) fn##_n(options, path.c_str(), path.size())
 #endif
 
 		// Set database path
@@ -2788,6 +2788,16 @@ public:
 			sentry_options_set_logger_enabled_when_crashed(options, *metadata.enable_logging_when_crashed);
 		}
 
+		// Set logger
+		if (metadata.logger_level) {
+			sentry_options_set_logger(options, []([[maybe_unused]] sentry_level_t level, const char* message, va_list args, [[maybe_unused]] void *userdata) {
+				char messageBuffer[2048];
+				std::vsnprintf(messageBuffer, sizeof(messageBuffer), message, args);
+				plg::print(messageBuffer);
+			}, nullptr);
+			sentry_options_set_logger_level(options, *metadata.logger_level);
+		}
+
 		// Set propagate traceparent
 		if (metadata.propagate_traceparent) {
 			sentry_options_set_propagate_traceparent(options, *metadata.propagate_traceparent);
@@ -2811,16 +2821,6 @@ public:
 		// Set enable logs
 		if (metadata.enable_logs) {
 			sentry_options_set_enable_logs(options, *metadata.enable_logs);
-		}
-
-		// Set logger
-		if (*metadata.logger_level) {
-			sentry_options_set_logger(options, []([[maybe_unused]] sentry_level_t level, const char* message, va_list args, [[maybe_unused]] void *userdata) {
-				char messageBuffer[2048];
-				std::vsnprintf(messageBuffer, sizeof(messageBuffer), message, args);
-				plg::print(messageBuffer);
-			}, nullptr);
-			sentry_options_set_logger_level(options, *metadata.logger_level);
 		}
 
 		// Set logs with attributes
@@ -2853,12 +2853,12 @@ public:
 			}
 		}
 
-#undef sentry_call
+#undef sentry_pcall
 
 #if S2_PLATFORM_WINDOWS
 #define sentry_pcall(fn, path) fn##w_n(path.c_str(), path.size())
 #else
-#define sentry_pcall(fn, path) fn_n(path.c_str(), path.size())
+#define sentry_pcall(fn, path) fn##_n(path.c_str(), path.size())
 #endif
 
 		// Add log file as attachment after init
@@ -3206,7 +3206,7 @@ int main(int argc, char* argv[]) {
 		binary_path /= "bin/" S2_BINARY;
 	}
 
-	if (!std::is_debugger_present()) {
+	if (true/*!std::is_debugger_present()*/) {
 		auto result = SentryInitializer::Initialize(binary_path, "sentry.jsonc");
 		if (!result) {
 			std::println(std::cerr, "Sentry error: {}", result.error());

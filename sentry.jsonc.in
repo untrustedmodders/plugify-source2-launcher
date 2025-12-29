@@ -54,6 +54,7 @@
 
   // Logging options
   // "enable_logging_when_crashed": true,
+  // "logger_level": "debug",
 
   // Session tracking
   // "auto_session_tracking": true,
@@ -73,6 +74,5 @@
 
   // Logging integration
   // "enable_logs": false,
-  // "logger_level": "debug",
   // "logs_with_attributes": false
 }
