@@ -337,118 +337,135 @@ private:
 class FileLoggingListener final : public ILoggingListener {
 public:
 	static Result<std::unique_ptr<FileLoggingListener>>
-	Create(const fs::path& filename, bool async = true) {
+	Create(const fs::path& filename, bool async = true, bool auto_flush = true) {
 		std::error_code ec;
 		fs::create_directories(filename.parent_path(), ec);
 
-		errno = 0;
 		std::ofstream file(filename, std::ios::app);
 		if (!file) {
 			return MakeError(
-			    "Failed to open log file: {} - {}",
-			    plg::as_string(filename),
-			    std::strerror(errno)
+				"Failed to open log file: {} - {}",
+				plg::as_string(filename),
+				std::strerror(errno)
 			);
 		}
 
-		return std::make_unique<FileLoggingListener>(std::move(file), async);
+		return std::make_unique<FileLoggingListener>(
+			std::move(file), async, auto_flush
+		);
 	}
 
-	explicit FileLoggingListener(std::ofstream&& file, bool async = true)
-	    : _async(async)
-	    , _running(true)
-	    , _file(std::move(file)) {
+	explicit FileLoggingListener(std::ofstream&& file, bool async = true, bool auto_flush = true)
+		: _file(std::move(file))
+		, _async(async)
+		, _auto_flush(auto_flush) {
 		if (_async) {
-			_worker_thread = std::thread(&FileLoggingListener::ProcessQueue, this);
+			_worker_thread = std::jthread([this](std::stop_token stoken) {
+				ProcessQueue(stoken);
+			});
 		}
 	}
 
 	~FileLoggingListener() {
 		if (_async) {
-			Stop();
+			_worker_thread.request_stop();
+			_condition.notify_one();
 		}
-		_file.close();
 	}
 
+	// Explicitly delete copy/move to prevent issues with threading
+	FileLoggingListener(const FileLoggingListener&) = delete;
+	FileLoggingListener& operator=(const FileLoggingListener&) = delete;
+	FileLoggingListener(FileLoggingListener&&) = delete;
+	FileLoggingListener& operator=(FileLoggingListener&&) = delete;
+
 	void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
-		if (pContext && (pContext->m_Flags & LCF_CONSOLE_ONLY) == 0) {
-			std::string_view message = pMessage;
-			if (message.ends_with('\n')) {
-				message = message.substr(0, message.size() - 1);
-			}
-			if (message.empty()) {
-				return;
-			}
+		if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0) {
+			return;
+		}
 
-			auto now = std::chrono::system_clock::now();
-			auto seconds = std::chrono::floor<std::chrono::seconds>(now);
+		std::string_view message = pMessage;
+		if (message.empty()) {
+			return;
+		}
 
-			std::string formatted_message;
-			try {
-				std::chrono::zoned_time zt{ std::chrono::current_zone(), seconds };
-				formatted_message = std::format("[{:%Y%m%d_%H%M%S}] {}", zt, message);
-			} catch (const std::exception&) {
-				// Fallback to UTC if local timezone fails
-				// auto time_t = std::chrono::system_clock::to_time_t(seconds);
-				formatted_message = std::format(
-				    "[{:%Y%m%d_%H%M%S}] {}",
-				    std::chrono::utc_clock::from_sys(seconds),
-				    message
-				);
-			}
+		std::string formatted_message = FormatMessage(message);
 
-			if (_async) {
-				{
-					std::lock_guard lock(_queue_mutex);
-					_message_queue.emplace(std::move(formatted_message));
-				}
-				_condition.notify_one();
-			} else {
-				Write(formatted_message);
+		if (_async) {
+			{
+				std::lock_guard lock(_queue_mutex);
+				_message_queue.push(std::move(formatted_message));
 			}
+			_condition.notify_one();
+		} else {
+			Write(formatted_message);
 		}
 	}
 
 private:
-	bool _async;
-	std::atomic<bool> _running;
-	std::thread _worker_thread;
+	// Member order matches initialization order
+	std::ofstream _file;
+	const bool _async{};
+	const bool _auto_flush{};
 	std::mutex _queue_mutex;
 	std::queue<std::string> _message_queue;
-	std::condition_variable _condition;
 	std::mutex _file_mutex;
-	std::ofstream _file;
+	std::condition_variable_any _condition;
+	std::jthread _worker_thread;
+
+	std::string FormatMessage(std::string_view message) {
+		auto now = std::chrono::system_clock::now();
+		auto seconds = std::chrono::floor<std::chrono::seconds>(now);
+
+		try {
+			std::chrono::zoned_time zt{std::chrono::current_zone(), seconds};
+			return std::format("[{:%Y%m%d_%H%M%S}] {}", zt, message);
+		} catch (const std::runtime_error&) {  // More specific exception
+			// Fallback to UTC if local timezone fails
+			return std::format(
+				"[{:%Y%m%d_%H%M%S}] {}",
+				std::chrono::utc_clock::from_sys(seconds),
+				message
+			);
+		}
+	}
 
 	void Write(const std::string& message) {
 		std::lock_guard lock(_file_mutex);
-		std::println(_file, "{}", message);
-		_file.flush();
+		if (!_file) {
+			return;
+		}
+
+		std::print(_file, "{}", message);
+
+		if (_auto_flush) {
+			_file.flush();
+		}
 	}
 
-	void ProcessQueue() {
-		while (_running) {
+	void ProcessMessages(std::unique_lock<std::mutex>& lock) {
+		while (!_message_queue.empty()) {
+			auto message = std::move(_message_queue.front());
+			_message_queue.pop();
+			lock.unlock();
+			Write(message);
+			lock.lock();
+		}
+	}
+
+	void ProcessQueue(std::stop_token stoken) {
+		while (!stoken.stop_requested()) {
 			std::unique_lock lock(_queue_mutex);
-			_condition.wait(lock, [this] { return !_message_queue.empty() || !_running; });
 
-			while (!_message_queue.empty()) {
-				auto message = std::move(_message_queue.front());
-				_message_queue.pop();
-				lock.unlock();
-				Write(message);
-				lock.lock();
-			}
-		}
-	}
+			_condition.wait(lock, stoken, [this] {
+				return !_message_queue.empty();
+			});
 
-	void Stop() {
-		{
-			std::lock_guard lock(_queue_mutex);
-			_running = false;
-			_condition.notify_one();
+			ProcessMessages(lock);
 		}
-		if (_worker_thread.joinable()) {
-			_worker_thread.join();
-		}
+
+		std::unique_lock lock(_queue_mutex);
+		ProcessMessages(lock);
 	}
 };
 
@@ -733,7 +750,7 @@ namespace {
 		}
 
 		if (filter.searchQuery) {
-			std::string query = filter.searchQuery;
+			std::string query = *filter.searchQuery;
 			std::transform(query.begin(), query.end(), query.begin(), ::tolower);
 
 			std::string name = ext->GetName();
