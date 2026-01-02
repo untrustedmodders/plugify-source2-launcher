@@ -213,7 +213,7 @@ public:
 	~ConsoleLoggger() override = default;
 
 	void Log(std::string_view message, Color color, bool newLine) const {
-		assert((*message.end()) == 0);
+		assert(*(message.data() + message.size()) == 0);
 		assert(message.size() < 2048);
 		std::scoped_lock<std::mutex> lock(m_mutex);
 		LoggingSystem_Log(m_channelID, LS_MESSAGE, color, message.data());
