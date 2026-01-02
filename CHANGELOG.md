@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.1.1](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.0...v2.1.1) (2026-01-02)
+
+
+### Bug Fixes
+
+* disable crashpad when debugger attached ([85b14f1](https://github.com/untrustedmodders/plugify-source2-launcher/commit/85b14f152377d4cabc7b95c920aaf11985300de2))
+* remove dereference of end string_view to avoid assert ([3faa42c](https://github.com/untrustedmodders/plugify-source2-launcher/commit/3faa42c44e24105e9e97c84b936a565e3e901ff9))
+* update deps ([c79273d](https://github.com/untrustedmodders/plugify-source2-launcher/commit/c79273dde2718471683715983c2cf4615222df18))
+
 ## [2.1.0](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.0.34...v2.1.0) (2025-12-29)
 
 
