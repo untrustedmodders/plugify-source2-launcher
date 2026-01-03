@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.2](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.1...v2.1.2) (2026-01-03)
+
+
+### Bug Fixes
+
+* add build type to configure step ([42cfb76](https://github.com/untrustedmodders/plugify-source2-launcher/commit/42cfb76aae6b5dcbe2792599bf992ece746d8137))
+
 ## [2.1.1](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.0...v2.1.1) (2026-01-02)
 
 
