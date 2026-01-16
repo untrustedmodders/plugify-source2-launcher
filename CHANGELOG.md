@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.3](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.2...v2.1.3) (2026-01-16)
+
+
+### Bug Fixes
+
+* update deps ([e2465ec](https://github.com/untrustedmodders/plugify-source2-launcher/commit/e2465eca5e3984621999830ec4bd6fd11c391a5e))
+* update for newer deadlock ([b712a46](https://github.com/untrustedmodders/plugify-source2-launcher/commit/b712a4600c9f4776a6e8451df5a4a8243dd024d7))
+
 ## [2.1.2](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.1...v2.1.2) (2026-01-03)
 
 
