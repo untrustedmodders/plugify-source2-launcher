@@ -145,8 +145,8 @@ elseif(UNIX)
     target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/sym/version_script.lds")
 endif()
 
-set(S2_GAME_NAME "csgo" CACHE INTERNAL "Set game name")
-set(S2_GAME_START "matchmaking" CACHE INTERNAL "Set game library name to start after")
+set(S2_GAME_NAME "csgo" CACHE STRING "Set game name")
+set(S2_GAME_START "matchmaking" CACHE STRING "Set game library name to start after")
 set(S2_COMPILE_DEFINITIONS
         S2_PLATFORM_WINDOWS=$<BOOL:${WIN32}>
         S2_PLATFORM_APPLE=$<BOOL:${APPLE}>

@@ -37,7 +37,7 @@
 			},
 			"cacheVariables": {
 				"S2_GAME_NAME": "citadel",
-				"S2_GAME_START": "v8system",
+				"S2_GAME_START": "navsystem",
 				"SOURCESDK_GAME_TARGET": "deadlock"
 			}
 		},
