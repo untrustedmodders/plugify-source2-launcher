@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.5](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.4...v2.1.5) (2026-01-24)
+
+
+### Bug Fixes
+
+* update deps ([3afe6b3](https://github.com/untrustedmodders/plugify-source2-launcher/commit/3afe6b356f976b6d429192fffb7112939d0be220))
+
 ## [2.1.4](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.3...v2.1.4) (2026-01-23)
 
 
