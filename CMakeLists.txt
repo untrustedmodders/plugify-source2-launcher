@@ -105,6 +105,9 @@ include(FetchCLI)
 include(FetchReproc)
 find_package(Threads REQUIRED)
 
+include(SetIcon)
+set_icon(${PROJECT_NAME} "icon.ico")
+
 set(S2_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ cpp-memory_utils CLI11 sentry::sentry sourcesdk::sourcesdk)
 
 if(NOT COMPILER_SUPPORTS_FORMAT)
