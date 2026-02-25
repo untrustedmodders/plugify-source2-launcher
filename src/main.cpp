@@ -216,9 +216,9 @@ public:
 		assert(*(message.data() + message.size()) == 0);
 		assert(message.size() < 2048);
 		std::scoped_lock<std::mutex> lock(m_mutex);
-		LoggingSystem_Log(m_channelID, LS_MESSAGE, color, message.data());
+		LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, color, message.data());
 		if (newLine && message.back() != '\n') {
-			LoggingSystem_Log(m_channelID, LS_MESSAGE, color, "\n");
+			LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, color, "\n");
 		}
 	}
 
@@ -229,11 +229,11 @@ public:
 		std::scoped_lock<std::mutex> lock(m_mutex);
 		for (const auto& [text, color] : tokens) {
 			for (auto segments = Tokenize(text); const auto& segment : segments) {
-				LoggingSystem_Log(m_channelID, LS_MESSAGE, color, segment.data());
+				LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, color, segment.data());
 			}
 		}
 		if (newLine && message.back() != '\n') {
-			LoggingSystem_Log(m_channelID, LS_MESSAGE, "\n");
+			LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, "\n");
 		}
 	}
 
@@ -249,25 +249,25 @@ public:
 			for (auto segments = Tokenize(output); const auto& segment : segments) {
 				switch (severity) {
 					case Severity::Unknown:
-						LoggingSystem_Log(m_channelID, LS_MESSAGE, S2Colors::WHITE, segment.data());
+						LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, S2Colors::WHITE, segment.data());
 						break;
 					case Severity::Fatal:
-						LoggingSystem_Log(m_channelID, LS_ERROR, S2Colors::MAGENTA, segment.data());
+						LoggingSystem_LogDirect(m_channelID, LS_ERROR, S2Colors::MAGENTA, segment.data());
 						break;
 					case Severity::Error:
-						LoggingSystem_Log(m_channelID, LS_WARNING, S2Colors::RED, segment.data());
+						LoggingSystem_LogDirect(m_channelID, LS_WARNING, S2Colors::RED, segment.data());
 						break;
 					case Severity::Warning:
-						LoggingSystem_Log(m_channelID, LS_WARNING, S2Colors::ORANGE, segment.data());
+						LoggingSystem_LogDirect(m_channelID, LS_WARNING, S2Colors::ORANGE, segment.data());
 						break;
 					case Severity::Info:
-						LoggingSystem_Log(m_channelID, LS_MESSAGE, S2Colors::YELLOW, segment.data());
+						LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, S2Colors::YELLOW, segment.data());
 						break;
 					case Severity::Debug:
-						LoggingSystem_Log(m_channelID, LS_MESSAGE, S2Colors::GREEN, segment.data());
+						LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, S2Colors::GREEN, segment.data());
 						break;
 					case Severity::Verbose:
-						LoggingSystem_Log(m_channelID, LS_MESSAGE, S2Colors::WHITE, segment.data());
+						LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, S2Colors::WHITE, segment.data());
 						break;
 					default:
 						break;
