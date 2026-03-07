@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.1.6](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.5...v2.1.6) (2026-03-07)
+
+
+### Bug Fixes
+
+* add icon to win executable ([06a98e3](https://github.com/untrustedmodders/plugify-source2-launcher/commit/06a98e381d0e6828d1fe4d66cfcd72eb2e3bd777))
+* avoid C formatting in logging ([e1a2be2](https://github.com/untrustedmodders/plugify-source2-launcher/commit/e1a2be2098591aea2fa0ba038fbad0137c04d31d))
+* linux build ([e979db2](https://github.com/untrustedmodders/plugify-source2-launcher/commit/e979db2303dda8076837831b6f02ec8aceaa6f60))
+* update deps ([08d0319](https://github.com/untrustedmodders/plugify-source2-launcher/commit/08d031901e4f9625c01597669ed9f4541cd8aed9))
+
 ## [2.1.5](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.4...v2.1.5) (2026-01-24)
 
 
