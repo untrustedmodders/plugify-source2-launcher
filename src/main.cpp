@@ -45,7 +45,7 @@
 using namespace plugify;
 namespace fs = std::filesystem;
 
-#if PLUGIFY_HAS_CXX23
+#if __has_include(<glaze/yaml.hpp>)
 using Value = glz::generic;
 #else
 using Value = glz::json_t;
