@@ -22,6 +22,8 @@
 #include <dynlibutils/vthook.hpp>
 #include <CLI/CLI.hpp>
 #include <glaze/glaze.hpp>
+#include <glaze/yaml.hpp>
+#include <glaze/toml.hpp>
 #include <reproc++/drain.hpp>
 #include <reproc++/reproc.hpp>
 
@@ -243,9 +245,9 @@ public:
 		}
 	}
 
-	void Log(std::string_view message, Severity severity, [[maybe_unused]] std::source_location loc) override {
+	void Log(std::string_view message, Severity severity, Location location) override {
 		if (severity <= m_severity) {
-			auto output = FormatMessage(message, severity, loc);
+			auto output = FormatMessage(message, severity, location);
 			/*LoggingRareOptions_t options {
 				.m_File = loc.file_name(),
 				.m_Line = static_cast<int>(loc.line()),
@@ -286,12 +288,16 @@ public:
 		m_severity = minSeverity;
 	}
 
+	Severity GetLogLevel() override {
+		return m_severity;
+	}
+
 	void Flush() override {
 	}
 
 protected:
 	static std::string
-	FormatMessage(std::string_view message, Severity severity, const std::source_location& loc) {
+	FormatMessage(std::string_view message, Severity severity, Location location) {
 		using namespace std::chrono;
 
 		auto now = system_clock::now();
@@ -301,12 +307,15 @@ protected:
 		auto ms = duration_cast<milliseconds>(now - seconds);
 
 		return std::format(
-			"[{:%F %T}.{:03d}] [{}] [{}:{}] {}\n",
+			"[{:%F %T}.{:03d}] [{}] [{} => {}:({}:{}): {}] {}",
 			seconds,  // %F = YYYY-MM-DD, %T = HH:MM:SS
 			static_cast<int>(ms.count()),
 			plg::enum_to_string(severity),
-			loc.file_name(),
-			loc.line(),
+			location.module_name(),
+			location.file_name(),
+			location.line(),
+			location.column(),
+			location.function_name(),
 			message
 		);
 	}
@@ -519,23 +528,37 @@ namespace {
 	constexpr const char* DOUBLE_LINE = "================================================================================";
 
 	template <typename T>
-	Result<T> ReadJson(const fs::path& path) {
+	Result<T> ReadFile(const fs::path& path) {
 		errno = 0;
 		std::ifstream file(path, std::ios::binary);
 		if (!file) {
 			return MakeError(
-				"Failed to read json file: {} - {}",
+				"Failed to read file: {} - {}",
 				plg::as_string(path),
 				std::strerror(errno)
 			);
 		}
-		auto text = std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-		auto json = glz::read_jsonc<T>(text);
-		if (!json) {
-			return MakeError(glz::format_error(json.error(), text));
+
+		std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+		T value;
+		auto ext = path.extension().string();
+
+		glz::error_ctx error;
+
+		if (ext == ".yml" || ext == ".yaml") {
+			error = glz::read_yaml(value, text);
+		} else if (ext == ".jsonc") {
+			error = glz::read_jsonc(value, text);
+		} else if (ext == ".json") {
+			error = glz::read_json(value, text);
 		}
 
-		return *json;
+		if (!error) {
+			return MakeError(glz::format_error(error, text));
+		}
+
+		return value;
 	}
 
 	using ColorCode = char;
@@ -2662,7 +2685,7 @@ public:
 	static Result<bool>
 	Initialize(const fs::path& exeDir, const fs::path& annotationsPath) {
 		// Load metadata
-		auto metadataResult = ReadJson<Metadata>(exeDir / annotationsPath);
+		auto metadataResult = ReadFile<Metadata>(exeDir / annotationsPath);
 		if (!metadataResult) {
 			return MakeError(std::move(metadataResult.error()));
 		}
@@ -2930,6 +2953,50 @@ namespace glz {
 		template <auto Opts>
 		static void op(const std::filesystem::path& value, auto&&... args) noexcept {
 			serialize<JSON>::op<Opts>(value.generic_string(), args...);
+		}
+	};
+
+	// std::filesystem::path
+	template <>
+	struct from<YAML, std::filesystem::path> {
+		template <auto Opts>
+		static void op(std::filesystem::path& value, auto&&... args) {
+			std::string str;
+			parse<YAML>::op<Opts>(str, args...);
+			value = str;
+			if (!value.empty()) {
+				value.make_preferred();
+			}
+		}
+	};
+
+	template <>
+	struct to<YAML, std::filesystem::path> {
+		template <auto Opts>
+		static void op(const std::filesystem::path& value, auto&&... args) noexcept {
+			serialize<YAML>::op<Opts>(value.generic_string(), args...);
+		}
+	};
+
+	// std::filesystem::path
+	template <>
+	struct from<TOML, std::filesystem::path> {
+		template <auto Opts>
+		static void op(std::filesystem::path& value, auto&&... args) {
+			std::string str;
+			parse<TOML>::op<Opts>(str, args...);
+			value = str;
+			if (!value.empty()) {
+				value.make_preferred();
+			}
+		}
+	};
+
+	template <>
+	struct to<TOML, std::filesystem::path> {
+		template <auto Opts>
+		static void op(const std::filesystem::path& value, auto&&... args) noexcept {
+			serialize<TOML>::op<Opts>(value.generic_string(), args...);
 		}
 	};
 }
