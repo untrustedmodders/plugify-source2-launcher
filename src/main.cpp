@@ -2913,6 +2913,37 @@ public:
 			return MakeError("Failed to initialize Sentry");
 		}
 
+		sentry_set_tag("app.name", S2_PROJECT_NAME);
+		sentry_set_tag("app.version", S2_PROJECT_VERSION);
+		sentry_set_tag("app.game", S2_GAME_NAME);
+
+		sentry_set_tag("os.name", S2_SYSTEM_NAME);
+		sentry_set_tag("os.version", S2_SYSTEM_VERSION);
+		sentry_set_tag("os.arch", S2_SYSTEM_ARCH);
+		sentry_set_tag("os.bitness", S2_SYSTEM_BITNESS);
+
+		sentry_set_tag("git.commit", S2_GIT_COMMIT_HASH);
+		sentry_set_tag("git.date", S2_GIT_COMMIT_DATE);
+		sentry_set_tag("git.tag", S2_GIT_TAG);
+		sentry_set_tag("git.subject", S2_GIT_COMMIT_SUBJECT);
+		sentry_set_tag("git.branch", S2_GIT_BRANCH);
+		sentry_set_tag("git.url", S2_GIT_URL);
+
+		sentry_set_tag("build.system", S2_BUILD_SYSTEM);
+		sentry_set_tag("build.type",  S2_BUILD_TYPE);
+		sentry_set_tag("build.date",  S2_BUILD_DATE);
+		sentry_set_tag("build.compiler", S2_BUILD_COMPILER);
+		sentry_set_tag("build.compiler_version", S2_BUILD_COMPILER_VERSION);
+		sentry_set_tag("build.toolchain", S2_BUILD_TOOLCHAIN);
+		sentry_set_tag("build.generator", S2_BUILD_GENERATOR);
+		sentry_set_tag("build.cmake_version", S2_BUILD_CMAKE_VERSION);
+		sentry_set_tag("build.cxx_standard", S2_BUILD_CXX_STANDARD);
+		sentry_set_tag("build.linker", S2_BUILD_LINKER);
+		sentry_set_tag("build.lto", S2_BUILD_LTO);
+		sentry_set_tag("build.sanitizers", S2_BUILD_SANITIZERS);
+		sentry_set_tag("build.target", S2_BUILD_TARGET);
+		sentry_set_tag("build.host", S2_BUILD_HOST);
+
 		return true;
 	}
 
@@ -2975,28 +3006,6 @@ namespace glz {
 		template <auto Opts>
 		static void op(const std::filesystem::path& value, auto&&... args) noexcept {
 			serialize<YAML>::op<Opts>(value.generic_string(), args...);
-		}
-	};
-
-	// std::filesystem::path
-	template <>
-	struct from<TOML, std::filesystem::path> {
-		template <auto Opts>
-		static void op(std::filesystem::path& value, auto&&... args) {
-			std::string str;
-			parse<TOML>::op<Opts>(str, args...);
-			value = str;
-			if (!value.empty()) {
-				value.make_preferred();
-			}
-		}
-	};
-
-	template <>
-	struct to<TOML, std::filesystem::path> {
-		template <auto Opts>
-		static void op(const std::filesystem::path& value, auto&&... args) noexcept {
-			serialize<TOML>::op<Opts>(value.generic_string(), args...);
 		}
 	};
 }

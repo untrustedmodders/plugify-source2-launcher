@@ -103,12 +103,13 @@ add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 #
 include(FetchCLI)
 include(FetchReproc)
+include(FetchGit)
 find_package(Threads REQUIRED)
 
 include(SetIcon)
 set_icon(${PROJECT_NAME} "icon.ico")
 
-set(S2_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ cpp-memory_utils CLI11 sentry::sentry sourcesdk::sourcesdk)
+set(S2_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ cpp-memory_utils CLI11 git sentry::sentry sourcesdk::sourcesdk)
 
 if(NOT COMPILER_SUPPORTS_FORMAT)
     #set(S2_LINK_LIBRARIES ${S2_LINK_LIBRARIES} fmt::fmt-header-only)
@@ -148,6 +149,14 @@ elseif(UNIX)
     target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/sym/version_script.lds")
 endif()
 
+string(TIMESTAMP S2_BUILD_DATE "%Y-%m-%dT%H:%M:%SZ" UTC)
+get_property(S2_BUILD_LTO GLOBAL PROPERTY INTERPROCEDURAL_OPTIMIZATION)
+if(PLUGIFY_USE_SANITIZER)
+    set(S2_BUILD_SANITIZERS "enabled")
+else()
+    set(S2_BUILD_SANITIZERS "disabled")
+endif()
+
 set(S2_GAME_NAME "csgo" CACHE STRING "Set game name")
 set(S2_GAME_START "matchmaking" CACHE STRING "Set game library name to start after")
 set(S2_COMPILE_DEFINITIONS
@@ -161,11 +170,31 @@ set(S2_COMPILE_DEFINITIONS
 
         S2_GAME_NAME="${S2_GAME_NAME}"
         S2_GAME_START="${S2_GAME_START}"
-        S2_PROJECT_YEAR="${PROJECT_BUILD_DATE_YEAR}"
+
         S2_PROJECT_NAME="${PROJECT_NAME}"
         S2_PROJECT_DESCRIPTION="${CMAKE_PROJECT_DESCRIPTION}"
         S2_PROJECT_HOMEPAGE_URL="${CMAKE_PROJECT_HOMEPAGE_URL}"
         S2_PROJECT_VERSION="${S2_VERSION}"
+
+        S2_SYSTEM_NAME="${CMAKE_SYSTEM_NAME}"
+        S2_SYSTEM_VERSION="${CMAKE_SYSTEM_VERSION}"
+        S2_SYSTEM_ARCH="${CMAKE_SYSTEM_PROCESSOR}"
+        S2_SYSTEM_BITNESS="$<IF:$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>,64,32>"
+
+        S2_BUILD_SYSTEM="${CMAKE_SYSTEM_NAME}"
+        S2_BUILD_COMPILER="${CMAKE_CXX_COMPILER_ID}"
+        S2_BUILD_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}"
+        S2_BUILD_GENERATOR="${CMAKE_GENERATOR}"
+        S2_BUILD_CMAKE_VERSION="${CMAKE_VERSION}"
+        S2_BUILD_TARGET="${CMAKE_SYSTEM_PROCESSOR}"
+        S2_BUILD_HOST="${CMAKE_HOST_SYSTEM_NAME}-${CMAKE_HOST_SYSTEM_PROCESSOR}"
+        S2_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
+        S2_BUILD_DATE="${S2_BUILD_DATE}"
+        S2_BUILD_CXX_STANDARD="${CMAKE_CXX_STANDARD}"
+        S2_BUILD_TOOLCHAIN="${CMAKE_TOOLCHAIN_FILE}"
+        S2_BUILD_LINKER="${CMAKE_LINKER}"
+        S2_BUILD_LTO="${S2_BUILD_LTO}"
+        S2_BUILD_SANITIZERS="${S2_BUILD_SANITIZERS}"
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${S2_PACKAGE})
