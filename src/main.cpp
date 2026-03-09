@@ -245,7 +245,7 @@ public:
 		}
 	}
 
-	void Log(std::string_view message, Severity severity, Location location) override {
+	void Log(std::string_view message, Severity severity, const Location& location) override {
 		if (severity <= m_severity) {
 			auto output = FormatMessage(message, severity, location);
 			/*LoggingRareOptions_t options {
@@ -297,7 +297,7 @@ public:
 
 protected:
 	static std::string
-	FormatMessage(std::string_view message, Severity severity, Location location) {
+	FormatMessage(std::string_view message, Severity severity, const Location& location) {
 		using namespace std::chrono;
 
 		auto now = system_clock::now();
