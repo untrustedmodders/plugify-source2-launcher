@@ -45,6 +45,7 @@
 #include <appframework/iappsystem.h>
 
 using namespace plugify;
+using namespace std::string_view_literals;
 namespace fs = std::filesystem;
 
 #if __has_include(<glaze/yaml.hpp>)
@@ -102,6 +103,8 @@ namespace {
 	// 30 0x1E  RS   (Record Separator)        ✅ Safe to use
 	// 31 0x1F  US   (Unit Separator)          ✅ Safe to use
 }
+
+bool s_sentry;
 
 // ANSI Color codes
 struct Colors {
@@ -223,7 +226,7 @@ public:
 	void Log(std::string_view message, Color color, bool newLine) const {
 		assert(*(message.data() + message.size()) == 0);
 		assert(message.size() < 2048);
-		std::scoped_lock<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, color, message.data());
 		if (newLine && message.back() != '\n') {
 			LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, color, "\n");
@@ -234,7 +237,7 @@ public:
 	void Log(std::string message, bool newLine) const {
 		auto tokens = AnsiColorParser::Tokenize(message);
 
-		std::scoped_lock<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		for (const auto& [text, color] : tokens) {
 			for (auto segments = Tokenize(text); const auto& segment : segments) {
 				LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, color, segment.data());
@@ -245,43 +248,14 @@ public:
 		}
 	}
 
-	void Log(std::string_view message, Severity severity, const Location& location) override {
-		if (severity <= m_severity) {
-			auto output = FormatMessage(message, severity, location);
-			/*LoggingRareOptions_t options {
-				.m_File = loc.file_name(),
-				.m_Line = static_cast<int>(loc.line()),
-				.m_Function = loc.function_name(),
-			};*/
-			std::scoped_lock<std::mutex> lock(m_mutex);
-			for (auto segments = Tokenize(output); const auto& segment : segments) {
-				switch (severity) {
-					case Severity::Unknown:
-						LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, S2Colors::WHITE, segment.data());
-						break;
-					case Severity::Fatal:
-						LoggingSystem_LogDirect(m_channelID, LS_ERROR, S2Colors::MAGENTA, segment.data());
-						break;
-					case Severity::Error:
-						LoggingSystem_LogDirect(m_channelID, LS_WARNING, S2Colors::RED, segment.data());
-						break;
-					case Severity::Warning:
-						LoggingSystem_LogDirect(m_channelID, LS_WARNING, S2Colors::ORANGE, segment.data());
-						break;
-					case Severity::Info:
-						LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, S2Colors::YELLOW, segment.data());
-						break;
-					case Severity::Debug:
-						LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, S2Colors::GREEN, segment.data());
-						break;
-					case Severity::Verbose:
-						LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, S2Colors::WHITE, segment.data());
-						break;
-					default:
-						break;
-				}
-			}
-		}
+	void Log(std::string_view message, Severity severity, const Location& location = Location::current()) override {
+		SubmitBreadcrumb(message, severity, location);
+
+		if (severity > m_severity)
+			return;
+
+		auto output = FormatMessage(message, severity, location);
+		WriteMessage(output, severity);
 	}
 
 	void SetLogLevel(Severity minSeverity) override {
@@ -296,23 +270,102 @@ public:
 	}
 
 protected:
+	struct LogParams {
+		LoggingSeverity_t severity;
+		Color color;
+	};
+
+	static inline LogParams kLogParams[] = {
+		/* Unknown */ { LS_MESSAGE, S2Colors::WHITE },
+		/* Trace   */ { LS_MESSAGE, S2Colors::WHITE },
+		/* Debug   */ { LS_MESSAGE, S2Colors::GREEN },
+		/* Info    */ { LS_MESSAGE, S2Colors::YELLOW },
+		/* Warning */ { LS_WARNING, S2Colors::ORANGE },
+		/* Error   */ { LS_WARNING, S2Colors::RED },
+		/* Fatal   */ { LS_ERROR,   S2Colors::MAGENTA }
+	};
+
+	void SubmitBreadcrumb(std::string_view message, Severity severity, const Location& location) const {
+		if (!s_sentry)
+			return;
+
+		if (severity == Severity::Trace) {
+			AddBreadcrumb("default", message, "console", SeverityToLevel(severity), location);
+			return;
+		}
+
+		if (severity <= m_severity)
+			AddBreadcrumb("default", message, "log", SeverityToLevel(severity), location);
+	}
+
+	void WriteMessage(std::string_view message, Severity severity) const {
+		const auto& [sev, color] = kLogParams[static_cast<size_t>(severity)];
+
+		std::scoped_lock lock(m_mutex);
+
+		for (auto segments = Tokenize(message); const auto& seg : segments) {
+			LoggingSystem_LogDirect(
+				m_channelID,
+				sev,
+				color,
+				seg.data()
+			);
+		}
+	}
+
+	static double GetTimestamp() {
+		auto now = std::chrono::system_clock::now();
+		auto duration = now.time_since_epoch();
+		return std::chrono::duration<double>(duration).count();
+	}
+
+	static void AddBreadcrumb(std::string_view type, std::string_view message, std::string_view category, std::string_view level, const Location& location) {
+		auto sentry_value_new_string_v = [](std::string_view value) {
+			return sentry_value_new_string_n(value.data(), value.size());
+		};
+		sentry_value_t crumb = sentry_value_new_breadcrumb_n(type.data(), type.size(), message.data(), message.size());
+		sentry_value_set_by_key(crumb, "category", sentry_value_new_string_v(category));
+		sentry_value_set_by_key(crumb, "level", sentry_value_new_string_v(level));
+		sentry_value_set_by_key(crumb, "origin", sentry_value_new_string_v(location.module_name()));
+		sentry_value_set_by_key(crumb, "timestamp", sentry_value_new_double(GetTimestamp()));
+		sentry_value_t data = sentry_value_new_object();
+		sentry_value_set_by_key(data, "line", sentry_value_new_uint64(location.line()));
+		sentry_value_set_by_key(data, "column", sentry_value_new_uint64(location.column()));
+		sentry_value_set_by_key(data, "file_name", sentry_value_new_string_v(location.file_name()));
+		sentry_value_set_by_key(data, "function_name", sentry_value_new_string_v(location.function_name()));
+		sentry_value_set_by_key(data, "module_name", sentry_value_new_string_v(location.module_name()));
+		sentry_value_set_by_key(crumb, "data", data);
+		sentry_add_breadcrumb(crumb);
+	}
+
+	static std::string_view SeverityToLevel(Severity severity) {
+		switch (severity) {
+			case Severity::Trace:   return "info";//"trace";
+			case Severity::Debug:   return "debug";
+			case Severity::Info:    return "info";
+			case Severity::Warning: return "warning";
+			case Severity::Error:   return "error";
+			case Severity::Fatal:   return "fatal";
+			default:                return "";
+		}
+	};
+
 	static std::string
 	FormatMessage(std::string_view message, Severity severity, const Location& location) {
 		using namespace std::chrono;
 
 		auto now = system_clock::now();
-
-		// Split into seconds + milliseconds
 		auto seconds = floor<std::chrono::seconds>(now);
 		auto ms = duration_cast<milliseconds>(now - seconds);
 
 		return std::format(
-			"[{:%F %T}.{:03d}] [{}] [{} => {}:({}:{}): {}] {}",
-			seconds,  // %F = YYYY-MM-DD, %T = HH:MM:SS
+			"[{:%F %T}.{:03d}] [{}] [{}:({}:{}): {}] {}",
+			seconds,
 			static_cast<int>(ms.count()),
 			plg::enum_to_string(severity),
-			location.module_name(),
-			location.file_name(),
+			location.module_name().empty()
+			? location.file_name()
+			: std::format("{} => {}", location.module_name(), location.file_name()),
 			location.line(),
 			location.column(),
 			location.function_name(),
@@ -490,7 +543,6 @@ std::shared_ptr<Plugify> s_plugify;
 std::shared_ptr<ConsoleLoggger> s_logger;
 std::unique_ptr<FileLoggingListener> s_listener;
 PlugifyState s_state;
-bool s_sentry;
 
 #define BASE_PATH PLUGIFY_PATH_LITERAL("" S2_GAME_NAME "/" "addons" "/" "plugify" "/")
 #define MAMBA_PATH BASE_PATH PLUGIFY_PATH_LITERAL("bin" "/" S2_BINARY "/" S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX)
@@ -2819,10 +2871,10 @@ public:
 
 		// Set logger
 		if (metadata.logger_level) {
-			sentry_options_set_logger(options, []([[maybe_unused]] sentry_level_t level, const char* message, va_list args, [[maybe_unused]] void *userdata) {
-				char messageBuffer[2048];
-				std::vsnprintf(messageBuffer, sizeof(messageBuffer), message, args);
-				plg::print(messageBuffer);
+			sentry_options_set_logger(options, [](sentry_level_t level, const char* message, va_list args, [[maybe_unused]] void *userdata) {
+				char buffer[2048];
+				std::vsnprintf(buffer, sizeof(buffer), message, args);
+				s_logger->Log(buffer, LevelToSeverity(level));
 			}, nullptr);
 			sentry_options_set_logger_level(options, *metadata.logger_level);
 		}
@@ -2913,42 +2965,60 @@ public:
 			return MakeError("Failed to initialize Sentry");
 		}
 
-		sentry_set_tag("app.name", S2_PROJECT_NAME);
-		sentry_set_tag("app.version", S2_PROJECT_VERSION);
-		sentry_set_tag("app.game", S2_GAME_NAME);
+		auto sentry_set_tag_v = [](std::string_view key, std::string_view value) {
+			sentry_set_tag_n(key.data(), key.size(), value.data(), value.size());
+		};
 
-		sentry_set_tag("os.name", S2_SYSTEM_NAME);
-		sentry_set_tag("os.version", S2_SYSTEM_VERSION);
-		sentry_set_tag("os.arch", S2_SYSTEM_ARCH);
-		sentry_set_tag("os.bitness", S2_SYSTEM_BITNESS);
+		sentry_set_tag_v("app.name", S2_PROJECT_NAME);
+		sentry_set_tag_v("app.version", S2_PROJECT_VERSION);
+		sentry_set_tag_v("app.game", S2_GAME_NAME);
+		sentry_set_tag_v("app.start", S2_GAME_START);
 
-		sentry_set_tag("git.commit", S2_GIT_COMMIT_HASH);
-		sentry_set_tag("git.date", S2_GIT_COMMIT_DATE);
-		sentry_set_tag("git.tag", S2_GIT_TAG);
-		sentry_set_tag("git.subject", S2_GIT_COMMIT_SUBJECT);
-		sentry_set_tag("git.branch", S2_GIT_BRANCH);
-		sentry_set_tag("git.url", S2_GIT_URL);
+		sentry_set_tag_v("os.name", S2_SYSTEM_NAME);
+		sentry_set_tag_v("os.version", S2_SYSTEM_VERSION);
+		sentry_set_tag_v("os.arch", S2_SYSTEM_ARCH);
+		sentry_set_tag_v("os.bitness", S2_SYSTEM_BITNESS);
 
-		sentry_set_tag("build.system", S2_BUILD_SYSTEM);
-		sentry_set_tag("build.type",  S2_BUILD_TYPE);
-		sentry_set_tag("build.date",  S2_BUILD_DATE);
-		sentry_set_tag("build.compiler", S2_BUILD_COMPILER);
-		sentry_set_tag("build.compiler_version", S2_BUILD_COMPILER_VERSION);
-		sentry_set_tag("build.toolchain", S2_BUILD_TOOLCHAIN);
-		sentry_set_tag("build.generator", S2_BUILD_GENERATOR);
-		sentry_set_tag("build.cmake_version", S2_BUILD_CMAKE_VERSION);
-		sentry_set_tag("build.cxx_standard", S2_BUILD_CXX_STANDARD);
-		sentry_set_tag("build.linker", S2_BUILD_LINKER);
-		sentry_set_tag("build.lto", S2_BUILD_LTO);
-		sentry_set_tag("build.sanitizers", S2_BUILD_SANITIZERS);
-		sentry_set_tag("build.target", S2_BUILD_TARGET);
-		sentry_set_tag("build.host", S2_BUILD_HOST);
+		sentry_set_tag_v("git.commit", S2_GIT_COMMIT_HASH);
+		sentry_set_tag_v("git.date", S2_GIT_COMMIT_DATE);
+		sentry_set_tag_v("git.tag", S2_GIT_TAG);
+		sentry_set_tag_v("git.subject", S2_GIT_COMMIT_SUBJECT);
+		sentry_set_tag_v("git.branch", S2_GIT_BRANCH);
+		sentry_set_tag_v("git.url", S2_GIT_URL);
+
+		sentry_set_tag_v("build.system", S2_BUILD_SYSTEM);
+		sentry_set_tag_v("build.type",  S2_BUILD_TYPE);
+		sentry_set_tag_v("build.date",  S2_BUILD_DATE);
+		sentry_set_tag_v("build.compiler", S2_BUILD_COMPILER);
+		sentry_set_tag_v("build.compiler_version", S2_BUILD_COMPILER_VERSION);
+		sentry_set_tag_v("build.toolchain", S2_BUILD_TOOLCHAIN);
+		sentry_set_tag_v("build.generator", S2_BUILD_GENERATOR);
+		sentry_set_tag_v("build.cmake_version", S2_BUILD_CMAKE_VERSION);
+		sentry_set_tag_v("build.cxx_standard", S2_BUILD_CXX_STANDARD);
+		sentry_set_tag_v("build.linker", S2_BUILD_LINKER);
+		sentry_set_tag_v("build.lto", S2_BUILD_LTO);
+		sentry_set_tag_v("build.sanitizers", S2_BUILD_SANITIZERS);
+		sentry_set_tag_v("build.target", S2_BUILD_TARGET);
+		sentry_set_tag_v("build.host", S2_BUILD_HOST);
 
 		return true;
 	}
 
 	static void Shutdown() {
 		sentry_close();
+	}
+
+private:
+	static Severity LevelToSeverity(sentry_level_t level) {
+		switch (level) {
+			//case SENTRY_LEVEL_TRACE:   return Severity::Trace;
+			case SENTRY_LEVEL_DEBUG:   return Severity::Debug;
+			case SENTRY_LEVEL_INFO:    return Severity::Info;
+			case SENTRY_LEVEL_WARNING: return Severity::Warning;
+			case SENTRY_LEVEL_ERROR:   return Severity::Error;
+			case SENTRY_LEVEL_FATAL:   return Severity::Fatal;
+			default:                   return Severity::Unknown;
+		}
 	}
 };
 
@@ -3281,6 +3351,15 @@ std::optional<fs::path> ExecutablePath() {
 }
 
 int main(int argc, char* argv[]) {
+	bool debug = false;
+
+	for (int i = 1; i < argc; ++i) {
+		if (argv[i] == "-debug"sv) {
+			debug = true;
+			break;
+		}
+	}
+
 	auto binary_path = ExecutablePath().value_or(fs::current_path());
 
 	std::error_code ec;
@@ -3313,7 +3392,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	s_logger = std::make_shared<ConsoleLoggger>("plugify");
-	s_logger->SetLogLevel(Severity::Info);
+	s_logger->SetLogLevel(debug ? Severity::Debug : Severity::Info);
 
 	auto table = engine.GetVirtualTableByName("CMaterialSystem2AppSystemDict");
 	DynLibUtils::CVirtualTable vtable(table);
