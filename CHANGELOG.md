@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.2.0](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.6...v2.2.0) (2026-03-10)
+
+
+### Features
+
+* update for new plugify ([4fa8340](https://github.com/untrustedmodders/plugify-source2-launcher/commit/4fa834028cb2474695b65e5a5d212fbbfbc7b181))
+* update logging ([a48bc7d](https://github.com/untrustedmodders/plugify-source2-launcher/commit/a48bc7d2ce62b9b143e5ad656908213e19dcbf87))
+
+
+### Bug Fixes
+
+* add sentry tags ([15a52c4](https://github.com/untrustedmodders/plugify-source2-launcher/commit/15a52c4630f9c593bb1cbb4688353bd8a2773645))
+* set location pass by ref ([190e159](https://github.com/untrustedmodders/plugify-source2-launcher/commit/190e159b6074928e69bb3e2e8965f2825b9e0745))
+
 ## [2.1.6](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.5...v2.1.6) (2026-03-07)
 
 
