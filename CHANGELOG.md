@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.0...v2.2.1) (2026-03-11)
+
+
+### Bug Fixes
+
+* update breadcrumbs ([6304434](https://github.com/untrustedmodders/plugify-source2-launcher/commit/630443493d16e15cc289be8deb12574dcfcc1d3c))
+
 ## [2.2.0](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.1.6...v2.2.0) (2026-03-10)
 
 
