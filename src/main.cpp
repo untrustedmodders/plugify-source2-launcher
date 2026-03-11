@@ -3071,6 +3071,19 @@ namespace glz {
 			"fatal",   SENTRY_LEVEL_FATAL
 		);
 	};
+	
+	template <>
+	struct glz::meta<Severity> {
+		using enum Severity;
+		static constexpr auto value = enumerate(
+			"trace",   Trace,
+			"debug",   Debug,
+			"info",    Info,
+			"warning", Warning,
+			"error",   Error,
+			"fatal",   Fatal
+		);
+	};
 
 	// std::filesystem::path
 	template <>
@@ -3388,12 +3401,14 @@ std::optional<fs::path> ExecutablePath() {
 }
 
 int main(int argc, char* argv[]) {
-	bool debug = false;
+	Severity severity = Severity::Info;
 
 	for (int i = 1; i < argc; ++i) {
-		if (argv[i] == "-debug"sv) {
-			debug = true;
-			break;
+		std::string_view arg = argv[i];
+
+		if (arg.starts_with("--verbosity=")) {
+			std::string_view value = arg.substr(12); // after '='
+			glz::read<glz::opts{.raw = true}>(severity, value);
 		}
 	}
 
@@ -3429,7 +3444,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	s_logger = std::make_shared<ConsoleLoggger>("plugify");
-	s_logger->SetLogLevel(debug ? Severity::Debug : Severity::Info);
+	s_logger->SetLogLevel(severity);
 
 	auto table = engine.GetVirtualTableByName("CMaterialSystem2AppSystemDict");
 	DynLibUtils::CVirtualTable vtable(table);
