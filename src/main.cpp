@@ -3408,7 +3408,11 @@ int main(int argc, char* argv[]) {
 
 		if (arg.starts_with("--verbosity=")) {
 			std::string_view value = arg.substr(12); // after '='
-			glz::read<glz::opts{.raw = true}>(severity, value);
+			auto error = glz::read_json(severity, value);
+			if (!error) {
+				std::println(std::cerr, "Log error: {}", glz::format_error(error, value));
+				return 1;
+			}
 		}
 	}
 
