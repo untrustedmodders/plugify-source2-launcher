@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.2](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.1...v2.2.2) (2026-03-11)
+
+
+### Bug Fixes
+
+* add new line to plugify logger ([a9c9745](https://github.com/untrustedmodders/plugify-source2-launcher/commit/a9c9745eb698057eea97eb34b1f7750470d94ef7))
+* add verbose flag to param ([15a95d7](https://github.com/untrustedmodders/plugify-source2-launcher/commit/15a95d7e4d3db92215e6464f432b93d674728c88))
+
 ## [2.2.1](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.0...v2.2.1) (2026-03-11)
 
 
