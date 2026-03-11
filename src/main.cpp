@@ -3073,7 +3073,7 @@ namespace glz {
 	};
 	
 	template <>
-	struct glz::meta<Severity> {
+	struct meta<Severity> {
 		using enum Severity;
 		static constexpr auto value = enumerate(
 			"trace",   Trace,
