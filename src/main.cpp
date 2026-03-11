@@ -290,12 +290,13 @@ protected:
 			return;
 
 		if (severity == Severity::Trace) {
-			AddBreadcrumb("default", message, "console", SeverityToLevel(severity), location);
+			AddBreadcrumb("default", message, "call", "info", location);
 			return;
 		}
 
-		if (severity <= m_severity)
+		/*if (severity <= m_severity)
 			AddBreadcrumb("default", message, "log", SeverityToLevel(severity), location);
+		 */
 	}
 
 	void WriteMessage(std::string_view message, Severity severity) const {
@@ -337,18 +338,6 @@ protected:
 		sentry_value_set_by_key(crumb, "data", data);
 		sentry_add_breadcrumb(crumb);
 	}
-
-	static std::string_view SeverityToLevel(Severity severity) {
-		switch (severity) {
-			case Severity::Trace:   return "info";//"trace";
-			case Severity::Debug:   return "debug";
-			case Severity::Info:    return "info";
-			case Severity::Warning: return "warning";
-			case Severity::Error:   return "error";
-			case Severity::Fatal:   return "fatal";
-			default:                return "";
-		}
-	};
 
 	static std::string
 	FormatMessage(std::string_view message, Severity severity, const Location& location) {
@@ -394,6 +383,18 @@ protected:
 		}
 
 		return segments;
+	}
+
+	static std::string_view SeverityToLevel(Severity severity) {
+		switch (severity) {
+			case Severity::Trace:   return "trace";
+			case Severity::Debug:   return "debug";
+			case Severity::Info:    return "info";
+			case Severity::Warning: return "warning";
+			case Severity::Error:   return "error";
+			case Severity::Fatal:   return "fatal";
+			default:                return "info";
+		}
 	}
 
 private:
@@ -470,18 +471,8 @@ public:
 		}
 	}
 
-private:
-	// Member order matches initialization order
-	std::ofstream _file;
-	const bool _async{};
-	const bool _auto_flush{};
-	std::mutex _queue_mutex;
-	std::queue<std::string> _message_queue;
-	std::mutex _file_mutex;
-	std::condition_variable_any _condition;
-	std::jthread _worker_thread;
-
-	std::string FormatMessage(std::string_view message) {
+protected:
+	static std::string FormatMessage(std::string_view message) {
 		auto now = std::chrono::system_clock::now();
 		auto seconds = std::chrono::floor<std::chrono::seconds>(now);
 
@@ -535,7 +526,50 @@ private:
 		std::unique_lock lock(_queue_mutex);
 		ProcessMessages(lock);
 	}
+
+private:
+	// Member order matches initialization order
+	std::ofstream _file;
+	const bool _async{};
+	const bool _auto_flush{};
+	std::mutex _queue_mutex;
+	std::queue<std::string> _message_queue;
+	std::mutex _file_mutex;
+	std::condition_variable_any _condition;
+	std::jthread _worker_thread;
 };
+
+/*class SentryLoggingListener final : public ILoggingListener {
+public:
+	SentryLoggingListener() = default;
+
+	// Explicitly delete copy/move to prevent issues with threading
+	SentryLoggingListener(const SentryLoggingListener&) = delete;
+	SentryLoggingListener& operator=(const SentryLoggingListener&) = delete;
+	SentryLoggingListener(SentryLoggingListener&&) = delete;
+	SentryLoggingListener& operator=(SentryLoggingListener&&) = delete;
+
+	void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
+		if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0) {
+			return;
+		}
+
+		sentry_log(SeverityToLevel(pContext->m_Severity), pMessage, sentry_value_new_null());
+	}
+
+protected:
+	static sentry_level_t SeverityToLevel(LoggingSeverity_t severity) {
+		switch (severity) {
+			case LS_MORE_DETAILED:  return SENTRY_LEVEL_TRACE;
+			case LS_DETAILED:   	return SENTRY_LEVEL_DEBUG;
+			case LS_MESSAGE:		return SENTRY_LEVEL_INFO;
+			case LS_WARNING:		return SENTRY_LEVEL_WARNING;
+			case LS_ASSERT:   		return SENTRY_LEVEL_ERROR;
+			case LS_ERROR:   		return SENTRY_LEVEL_FATAL;
+			default:                return SENTRY_LEVEL_INFO;
+		}
+	}
+}*/
 
 enum class PlugifyState { Wait, Load, Unload, Reload, Quit };
 
@@ -3011,7 +3045,7 @@ public:
 private:
 	static Severity LevelToSeverity(sentry_level_t level) {
 		switch (level) {
-			//case SENTRY_LEVEL_TRACE:   return Severity::Trace;
+			case SENTRY_LEVEL_TRACE:   return Severity::Trace;
 			case SENTRY_LEVEL_DEBUG:   return Severity::Debug;
 			case SENTRY_LEVEL_INFO:    return Severity::Info;
 			case SENTRY_LEVEL_WARNING: return Severity::Warning;
