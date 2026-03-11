@@ -290,13 +290,13 @@ protected:
 			return;
 
 		if (severity == Severity::Trace) {
-			AddBreadcrumb("default", message, "call", "info", location);
+			AddBreadcrumb("default", message, "trace", "info", location);
 			return;
 		}
 
-		/*if (severity <= m_severity)
+		if (severity <= m_severity) {
 			AddBreadcrumb("default", message, "log", SeverityToLevel(severity), location);
-		 */
+		}
 	}
 
 	void WriteMessage(std::string_view message, Severity severity) const {
@@ -311,6 +311,9 @@ protected:
 				color,
 				seg.data()
 			);
+		}
+		if (message.back() != '\n') {
+			LoggingSystem_LogDirect(m_channelID, sev, "\n");
 		}
 	}
 
