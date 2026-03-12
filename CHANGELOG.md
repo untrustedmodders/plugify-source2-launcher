@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.5](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.4...v2.2.5) (2026-03-12)
+
+
+### Bug Fixes
+
+* logging severity typo ([359d2f2](https://github.com/untrustedmodders/plugify-source2-launcher/commit/359d2f229e704782a0850be9d1e6e0213b5f3ea3))
+
 ## [2.2.4](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.3...v2.2.4) (2026-03-11)
 
 
