@@ -1138,7 +1138,9 @@ namespace {
 	};
 
 	// Helper to parse sort option
-	SortBy ParseSortBy(std::string_view str) {
+	SortBy ParseSortBy(std::string str) {
+		std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+
 		if (str == "name") {
 			return SortBy::Name;
 		}
@@ -1154,7 +1156,34 @@ namespace {
 		if (str == "loadtime") {
 			return SortBy::LoadTime;
 		}
+
 		return SortBy::Name;
+	};
+
+	// Helper to parse extension state
+	ExtensionState ParseExtensionState(std::string str) {
+		std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+
+		if (str == "loaded") {
+			return ExtensionState::Loaded;
+		}
+		if (str == "started") {
+			return ExtensionState::Started;
+		}
+		if (str == "failed") {
+			return ExtensionState::Failed;
+		}
+		if (str == "disabled") {
+			return ExtensionState::Disabled;
+		}
+		if (str == "corrupted") {
+			return ExtensionState::Corrupted;
+		}
+		if (str == "unresolved") {
+			return ExtensionState::Unresolved;
+		}
+
+		return ExtensionState::Unknown;
 	};
 
 	// Helper to parse state filter
@@ -1162,23 +1191,10 @@ namespace {
 		std::vector<ExtensionState> states;
 		states.reserve(strs.size());
 		for (const auto& str : strs) {
-			std::string lower = str;
-			std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-
-			if (lower == "loaded") {
-				states.push_back(ExtensionState::Loaded);
-			} else if (lower == "started") {
-				states.push_back(ExtensionState::Started);
-			} else if (lower == "failed") {
-				states.push_back(ExtensionState::Failed);
-			} else if (lower == "disabled") {
-				states.push_back(ExtensionState::Disabled);
-			} else if (lower == "corrupted") {
-				states.push_back(ExtensionState::Corrupted);
-			} else if (lower == "unresolved") {
-				states.push_back(ExtensionState::Unresolved);
+			auto state = ParseExtensionState(str);
+			if (state != ExtensionState::Unknown) {
+				states.push_back(state);
 			}
-			// Add more as needed
 		}
 		return states;
 	};
@@ -2305,6 +2321,32 @@ namespace {
 
 		plg::print(DOUBLE_LINE);
 	}
+
+	// Helper to parse severity option
+	Severity ParseSeverity(std::string str) {
+		std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+
+		if (str == "trace") {
+			return Severity::Trace;
+		}
+		if (str == "debug") {
+			return Severity::Debug;
+		}
+		if (str == "info") {
+			return Severity::Info;
+		}
+		if (str == "warning") {
+			return Severity::Warning;
+		}
+		if (str == "error") {
+			return Severity::Error;
+		}
+		if (str == "fatal") {
+			return Severity::Fatal;
+		}
+
+		return Severity::Info;
+	}
 };
 
 // Main command handler using CLI11
@@ -3072,19 +3114,6 @@ namespace glz {
 			"fatal",   SENTRY_LEVEL_FATAL
 		);
 	};
-	
-	template <>
-	struct meta<Severity> {
-		using enum Severity;
-		static constexpr auto value = enumerate(
-			"trace",   Trace,
-			"debug",   Debug,
-			"info",    Info,
-			"warning", Warning,
-			"error",   Error,
-			"fatal",   Fatal
-		);
-	};
 
 	// std::filesystem::path
 	template <>
@@ -3409,11 +3438,7 @@ int main(int argc, char* argv[]) {
 
 		if (arg.starts_with("--verbosity=")) {
 			std::string_view value = arg.substr(12); // after '='
-			auto error = glz::read_json(severity, value);
-			if (!error) {
-				std::println(std::cerr, "Log error: {}", glz::format_error(error, value));
-				return 1;
-			}
+			severity = ParseSeverity(std::string(value));
 		}
 	}
 
