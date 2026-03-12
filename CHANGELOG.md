@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.6](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.5...v2.2.6) (2026-03-12)
+
+
+### Bug Fixes
+
+* rework severity parser ([55dfddf](https://github.com/untrustedmodders/plugify-source2-launcher/commit/55dfddfca2cc7a8e6d3b7d9e5fde0fb02c5e6386))
+
 ## [2.2.5](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.4...v2.2.5) (2026-03-12)
 
 
