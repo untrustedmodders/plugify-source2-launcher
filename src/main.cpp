@@ -251,19 +251,23 @@ public:
 	void Log(std::string_view message, Severity severity, const Location& location = Location::current()) override {
 		SubmitBreadcrumb(message, severity, location);
 
-		if (severity > m_severity)
+		if (severity == Severity::Unknown) {
+			WriteMessage(message, severity);
 			return;
+		} else if (severity < m_minSeverity) {
+			return;
+		}
 
 		auto output = FormatMessage(message, severity, location);
 		WriteMessage(output, severity);
 	}
 
 	void SetLogLevel(Severity minSeverity) override {
-		m_severity = minSeverity;
+		m_minSeverity = minSeverity;
 	}
 
 	Severity GetLogLevel() override {
-		return m_severity;
+		return m_minSeverity;
 	}
 
 	void Flush() override {
@@ -291,10 +295,7 @@ protected:
 
 		if (severity == Severity::Trace) {
 			AddBreadcrumb("default", message, "trace", "info", location);
-			return;
-		}
-
-		if (severity <= m_severity) {
+		} else {
 			AddBreadcrumb("default", message, "log", SeverityToLevel(severity), location);
 		}
 	}
@@ -402,7 +403,7 @@ protected:
 
 private:
 	mutable std::mutex m_mutex;
-	std::atomic<Severity> m_severity{ Severity::Unknown };
+	std::atomic<Severity> m_minSeverity{ Severity::Unknown };
 	LoggingChannelID_t m_channelID;
 };
 
