@@ -29,7 +29,7 @@
   "listen_console": true,
 
   // Enable/disable Sentry
-  "enabled": false
+  "enabled": false,
 
   // Advanced options (uncomment to use):
 
