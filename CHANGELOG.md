@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.2.7](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.6...v2.2.7) (2026-03-16)
+
+
+### Bug Fixes
+
+* add `,` in sentry.jsonc.in ([eaac7de](https://github.com/untrustedmodders/plugify-source2-launcher/commit/eaac7dedb9cb7d99cf2008b28cc448a391c8278c))
+* add breadcrumbs settings ([903747c](https://github.com/untrustedmodders/plugify-source2-launcher/commit/903747cec577501c2d842ac335e41a5449ce8a11))
+* update deps ([03950e4](https://github.com/untrustedmodders/plugify-source2-launcher/commit/03950e4292ffab6edf93b3036e94a6edd5f56eaa))
+
 ## [2.2.6](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.5...v2.2.6) (2026-03-12)
 
 
