@@ -74,5 +74,6 @@
 
   // Logging integration
   // "enable_logs": false,
-  // "logs_with_attributes": false
+  // "logs_with_attributes": false,
+  // "logs_with_breadcrumbs": false
 }

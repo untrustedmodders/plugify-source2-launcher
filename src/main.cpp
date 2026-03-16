@@ -104,7 +104,7 @@ namespace {
 	// 31 0x1F  US   (Unit Separator)          ✅ Safe to use
 }
 
-bool s_sentry;
+bool s_sentry, s_breadcrumbs;
 
 // ANSI Color codes
 struct Colors {
@@ -249,7 +249,9 @@ public:
 	}
 
 	void Log(std::string_view message, Severity severity, const Location& location = Location::current()) override {
-		SubmitBreadcrumb(message, severity, location);
+		if (s_sentry && s_breadcrumbs) {
+			SubmitBreadcrumb(message, severity, location);
+		}
 
 		if (severity == Severity::Unknown) {
 			WriteMessage(message, severity);
@@ -290,9 +292,6 @@ protected:
 	};
 
 	void SubmitBreadcrumb(std::string_view message, Severity severity, const Location& location) const {
-		if (!s_sentry)
-			return;
-
 		if (severity == Severity::Trace) {
 			AddBreadcrumb("default", message, "trace", "info", location);
 		} else {
@@ -404,7 +403,7 @@ protected:
 private:
 	mutable std::mutex m_mutex;
 	std::atomic<Severity> m_minSeverity{ Severity::Unknown };
-	LoggingChannelID_t m_channelID;
+	LoggingChannelID_t m_channelID{ INVALID_LOGGING_CHANNEL_ID };
 };
 
 class FileLoggingListener final : public ILoggingListener {
@@ -2770,6 +2769,7 @@ class SentryInitializer {
 		std::optional<bool> attach_screenshot;
 		std::optional<bool> enable_logs;
 		std::optional<bool> logs_with_attributes;
+		std::optional<bool> logs_with_breadcrumbs;
 		std::optional<bool> enabled;
 	};
 
@@ -2987,6 +2987,11 @@ public:
 		// Set logs with attributes
 		if (metadata.logs_with_attributes) {
 			sentry_options_set_logs_with_attributes(options, *metadata.logs_with_attributes);
+		}
+
+		// Set logs with breadcrumbs
+		if (metadata.logs_with_breadcrumbs) {
+			s_breadcrumbs = *metadata.logs_with_breadcrumbs;
 		}
 
 		// Set external crash reporter path
