@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <queue>
 #include <thread>
+#include <semaphore>
 #include <print>
 #include <unordered_set>
 
@@ -26,6 +27,7 @@
 #include <glaze/toml.hpp>
 #include <reproc++/drain.hpp>
 #include <reproc++/reproc.hpp>
+#include <daking/MPSC_queue.hpp>
 
 #include <plugify/assembly.hpp>
 #include <plugify/extension.hpp>
@@ -213,50 +215,105 @@ public:
 class ConsoleLoggger final : public ILogger {
 public:
 	explicit ConsoleLoggger(
-	    const char* name,
-	    int flags = 0,
-	    LoggingVerbosity_t verbosity = LV_DEFAULT,
-	    Color color = UNSPECIFIED_LOGGING_COLOR
+		const char* name,
+		int flags = 0,
+		LoggingVerbosity_t verbosity = LV_DEFAULT,
+		Color color = UNSPECIFIED_LOGGING_COLOR
 	) {
-		m_channelID = LoggingSystem_RegisterLoggingChannel(name, nullptr, flags, verbosity, color);
+		_channel = LoggingSystem_RegisterLoggingChannel(name, nullptr, flags, verbosity, color);
+		_worker_thread = std::jthread([this](std::stop_token stoken) {
+			ProcessQueue(stoken);
+		});
 	}
 
-	~ConsoleLoggger() override = default;
+	~ConsoleLoggger() override {
+		_worker_thread.request_stop();
+		_semaphore.release();
+	}
 
-	void Log(std::string_view message, Color color, bool newLine) const {
-		assert(*(message.data() + message.size()) == 0);
+	void Log(std::string_view message, Color color, bool newLine) {
+		if (message.empty())
+			return;
+
 		assert(message.size() < 2048);
-		std::scoped_lock lock(m_mutex);
-		LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, color, message.data());
+
+		LoggingSystem_LogDirect(_channel, LS_MESSAGE, color, message.data());
 		if (newLine && message.back() != '\n') {
-			LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, color, "\n");
+			LoggingSystem_LogDirect(_channel, LS_MESSAGE, color, "\n");
 		}
 	}
 
 	// ReSharper disable once CppPassValueParameterByConstReference
-	void Log(std::string message, bool newLine) const {
+	void Log(std::string message, bool newLine) {
+		if (message.empty())
+			return;
+
 		auto tokens = AnsiColorParser::Tokenize(message);
 
-		std::scoped_lock lock(m_mutex);
 		for (const auto& [text, color] : tokens) {
 			for (auto segments = Tokenize(text); const auto& segment : segments) {
-				LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, color, segment.data());
+				LoggingSystem_LogDirect(_channel, LS_MESSAGE, color, segment.data());
 			}
 		}
 		if (newLine && message.back() != '\n') {
-			LoggingSystem_LogDirect(m_channelID, LS_MESSAGE, "\n");
+			LoggingSystem_LogDirect(_channel, LS_MESSAGE, "\n");
 		}
 	}
 
 	void Log(std::string_view message, Severity severity, const Location& location = Location::current()) override {
-		if (s_sentry && s_breadcrumbs) {
-			SubmitBreadcrumb(message, severity, location);
-		}
+		if (message.empty())
+			return;
+
+		_queue.enqueue(LogEntry{
+			.message = std::string(message),
+			.severity = severity,
+			.location = location
+		});
+		_semaphore.release();
+	}
+
+	void SetLogLevel(Severity minSeverity) override {
+		_min_severity = minSeverity;
+	}
+
+	Severity GetLogLevel() override {
+		return _min_severity;
+	}
+
+	void Flush() override {
+	}
+
+protected:
+	struct alignas(std::hardware_constructive_interference_size) LogEntry {
+		std::string message;
+		Severity severity;
+		Location location;
+	};
+
+	struct LogParams {
+		LoggingSeverity_t severity;
+		Color color;
+	};
+
+	static inline LogParams kLogParams[] = {
+		/* Unknown */ { LS_MESSAGE, S2Colors::WHITE   },
+		/* Trace   */ { LS_MESSAGE, S2Colors::WHITE   },
+		/* Debug   */ { LS_MESSAGE, S2Colors::GREEN   },
+		/* Info    */ { LS_MESSAGE, S2Colors::YELLOW  },
+		/* Warning */ { LS_WARNING, S2Colors::ORANGE  },
+		/* Error   */ { LS_WARNING, S2Colors::RED     },
+		/* Fatal   */ { LS_ERROR,   S2Colors::MAGENTA },
+	};
+
+	void Write(const LogEntry& entry) {
+		const auto& [message, severity, location] = entry;
+
+		AddBreadcrumb(message, severity, location);
 
 		if (severity == Severity::Unknown) {
 			WriteMessage(message, severity);
 			return;
-		} else if (severity < m_minSeverity) {
+		} else if (severity < _min_severity) {
 			return;
 		}
 
@@ -264,66 +321,47 @@ public:
 		WriteMessage(output, severity);
 	}
 
-	void SetLogLevel(Severity minSeverity) override {
-		m_minSeverity = minSeverity;
-	}
-
-	Severity GetLogLevel() override {
-		return m_minSeverity;
-	}
-
-	void Flush() override {
-	}
-
-protected:
-	struct LogParams {
-		LoggingSeverity_t severity;
-		Color color;
-	};
-
-	static inline LogParams kLogParams[] = {
-		/* Unknown */ { LS_MESSAGE, S2Colors::WHITE },
-		/* Trace   */ { LS_MESSAGE, S2Colors::WHITE },
-		/* Debug   */ { LS_MESSAGE, S2Colors::GREEN },
-		/* Info    */ { LS_MESSAGE, S2Colors::YELLOW },
-		/* Warning */ { LS_WARNING, S2Colors::ORANGE },
-		/* Error   */ { LS_WARNING, S2Colors::RED },
-		/* Fatal   */ { LS_ERROR,   S2Colors::MAGENTA }
-	};
-
-	void SubmitBreadcrumb(std::string_view message, Severity severity, const Location& location) const {
-		if (severity == Severity::Trace) {
-			AddBreadcrumb("default", message, "trace", "info", location);
-		} else {
-			AddBreadcrumb("default", message, "log", SeverityToLevel(severity), location);
-		}
-	}
-
 	void WriteMessage(std::string_view message, Severity severity) const {
 		const auto& [sev, color] = kLogParams[static_cast<size_t>(severity)];
 
-		std::scoped_lock lock(m_mutex);
-
 		for (auto segments = Tokenize(message); const auto& seg : segments) {
 			LoggingSystem_LogDirect(
-				m_channelID,
+				_channel,
 				sev,
 				color,
 				seg.data()
 			);
 		}
 		if (message.back() != '\n') {
-			LoggingSystem_LogDirect(m_channelID, sev, "\n");
+			LoggingSystem_LogDirect(_channel, sev, "\n");
 		}
 	}
 
+	void ProcessQueue(std::stop_token stoken) {
+		LogEntry entry;
+		while (!stoken.stop_requested()) {
+			_semaphore.acquire(); // sleeps until a Log() wakes it
+			if (_queue.try_dequeue(entry)) // spurious wake from destructor: no-op
+				Write(entry);
+		}
+		while (_queue.try_dequeue(entry))
+			Write(entry);
+	}
+
+private:
 	static double GetTimestamp() {
 		auto now = std::chrono::system_clock::now();
 		auto duration = now.time_since_epoch();
 		return std::chrono::duration<double>(duration).count();
 	}
 
-	static void AddBreadcrumb(std::string_view type, std::string_view message, std::string_view category, std::string_view level, const Location& location) {
+	static void AddBreadcrumb(std::string_view message, Severity severity, const Location& location) {
+		if (!s_sentry || !s_breadcrumbs || severity == Severity::Unknown)
+			return;
+
+		std::string_view type = "default";
+		std::string_view category = severity == Severity::Trace ? "trace" : "log";
+		std::string_view level = severity == Severity::Trace ? "info" : SeverityToLevel(severity);
 		auto sentry_value_new_string_v = [](std::string_view value) {
 			return sentry_value_new_string_n(value.data(), value.size());
 		};
@@ -331,7 +369,7 @@ protected:
 		sentry_value_set_by_key(crumb, "category", sentry_value_new_string_v(category));
 		sentry_value_set_by_key(crumb, "level", sentry_value_new_string_v(level));
 		sentry_value_set_by_key(crumb, "origin", sentry_value_new_string_v(location.module_name()));
-		sentry_value_set_by_key(crumb, "timestamp", sentry_value_new_double(GetTimestamp()));
+		//sentry_value_set_by_key(crumb, "timestamp", sentry_value_new_double(GetTimestamp()));
 		sentry_value_t data = sentry_value_new_object();
 		sentry_value_set_by_key(data, "line", sentry_value_new_uint64(location.line()));
 		sentry_value_set_by_key(data, "column", sentry_value_new_uint64(location.column()));
@@ -401,145 +439,99 @@ protected:
 	}
 
 private:
-	mutable std::mutex m_mutex;
-	std::atomic<Severity> m_minSeverity{ Severity::Unknown };
-	LoggingChannelID_t m_channelID{ INVALID_LOGGING_CHANNEL_ID };
+	std::atomic<Severity> _min_severity{ Severity::Unknown };
+	LoggingChannelID_t _channel{ INVALID_LOGGING_CHANNEL_ID };
+	std::counting_semaphore<> _semaphore{ 0 };
+	std::jthread _worker_thread;
+	daking::MPSC_queue<LogEntry> _queue;
 };
 
 class FileLoggingListener final : public ILoggingListener {
 public:
-	static Result<std::unique_ptr<FileLoggingListener>>
-	Create(const fs::path& filename, bool async = true, bool auto_flush = true) {
-		std::error_code ec;
-		fs::create_directories(filename.parent_path(), ec);
+    static Result<std::unique_ptr<FileLoggingListener>>
+    Create(const fs::path& filename, bool auto_flush = true) {
+        std::error_code ec;
+        fs::create_directories(filename.parent_path(), ec);
 
-		std::ofstream file(filename, std::ios::app);
-		if (!file) {
-			return MakeError(
-				"Failed to open log file: {} - {}",
-				plg::as_string(filename),
-				std::strerror(errno)
-			);
-		}
+        std::ofstream file(filename, std::ios::app);
+        if (!file) {
+            return MakeError(
+                "Failed to open log file: {} - {}",
+                plg::as_string(filename),
+                std::strerror(errno)
+            );
+        }
 
-		return std::make_unique<FileLoggingListener>(
-			std::move(file), async, auto_flush
-		);
-	}
+        return std::make_unique<FileLoggingListener>(std::move(file), auto_flush);
+    }
 
-	explicit FileLoggingListener(std::ofstream&& file, bool async = true, bool auto_flush = true)
-		: _file(std::move(file))
-		, _async(async)
-		, _auto_flush(auto_flush) {
-		if (_async) {
-			_worker_thread = std::jthread([this](std::stop_token stoken) {
-				ProcessQueue(stoken);
-			});
-		}
-	}
+    explicit FileLoggingListener(std::ofstream&& file, bool auto_flush = true)
+        : _file(std::move(file))
+        , _auto_flush(auto_flush) {
+        _worker_thread = std::jthread([this](std::stop_token stoken) {
+            ProcessQueue(stoken);
+        });
+    }
 
-	~FileLoggingListener() {
-		if (_async) {
-			_worker_thread.request_stop();
-			_condition.notify_one();
-		}
-	}
+    ~FileLoggingListener() {
+        _worker_thread.request_stop();
+        _semaphore.release();
+    }
 
-	// Explicitly delete copy/move to prevent issues with threading
-	FileLoggingListener(const FileLoggingListener&) = delete;
-	FileLoggingListener& operator=(const FileLoggingListener&) = delete;
-	FileLoggingListener(FileLoggingListener&&) = delete;
-	FileLoggingListener& operator=(FileLoggingListener&&) = delete;
+    FileLoggingListener(const FileLoggingListener&)            = delete;
+    FileLoggingListener& operator=(const FileLoggingListener&) = delete;
+    FileLoggingListener(FileLoggingListener&&)                 = delete;
+    FileLoggingListener& operator=(FileLoggingListener&&)      = delete;
 
-	void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
-		if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0) {
-			return;
-		}
+    void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
+        if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0 || pMessage == nullptr || pMessage[0] == '\0') { }
+            return;
 
-		std::string_view message = pMessage;
-		if (message.empty()) {
-			return;
-		}
-
-		std::string formatted_message = FormatMessage(message);
-
-		if (_async) {
-			{
-				std::lock_guard lock(_queue_mutex);
-				_message_queue.push(std::move(formatted_message));
-			}
-			_condition.notify_one();
-		} else {
-			Write(formatted_message);
-		}
-	}
+        _queue.enqueue(pMessage);
+        _semaphore.release();
+    }
 
 protected:
-	static std::string FormatMessage(std::string_view message) {
-		auto now = std::chrono::system_clock::now();
-		auto seconds = std::chrono::floor<std::chrono::seconds>(now);
+    void Write(std::string_view message) {
+        if (!_file)
+            return;
 
-		try {
-			std::chrono::zoned_time zt{std::chrono::current_zone(), seconds};
-			return std::format("[{:%Y%m%d_%H%M%S}] {}", zt, message);
-		} catch (const std::runtime_error&) {  // More specific exception
-			// Fallback to UTC if local timezone fails
-			return std::format(
+    	auto now     = std::chrono::system_clock::now();
+    	auto seconds = std::chrono::floor<std::chrono::seconds>(now);
+
+    	try {
+    		std::chrono::zoned_time zt{std::chrono::current_zone(), seconds};
+    		std::print(_file, "[{:%Y%m%d_%H%M%S}] {}", zt, message);
+    	} catch (const std::runtime_error&) {
+    		std::print(
+				_file,
 				"[{:%Y%m%d_%H%M%S}] {}",
 				std::chrono::utc_clock::from_sys(seconds),
 				message
 			);
-		}
-	}
+    	}
 
-	void Write(const std::string& message) {
-		std::lock_guard lock(_file_mutex);
-		if (!_file) {
-			return;
-		}
+        if (_auto_flush)
+            _file.flush();
+    }
 
-		std::print(_file, "{}", message);
-
-		if (_auto_flush) {
-			_file.flush();
-		}
-	}
-
-	void ProcessMessages(std::unique_lock<std::mutex>& lock) {
-		while (!_message_queue.empty()) {
-			auto message = std::move(_message_queue.front());
-			_message_queue.pop();
-			lock.unlock();
-			Write(message);
-			lock.lock();
-		}
-	}
-
-	void ProcessQueue(std::stop_token stoken) {
-		while (!stoken.stop_requested()) {
-			std::unique_lock lock(_queue_mutex);
-
-			_condition.wait(lock, stoken, [this] {
-				return !_message_queue.empty();
-			});
-
-			ProcessMessages(lock);
-		}
-
-		std::unique_lock lock(_queue_mutex);
-		ProcessMessages(lock);
-	}
+    void ProcessQueue(std::stop_token stoken) {
+        std::string entry;
+        while (!stoken.stop_requested()) {
+            _semaphore.acquire();
+            if (_queue.try_dequeue(entry))
+                Write(entry);
+        }
+        while (_queue.try_dequeue(entry))
+            Write(entry);
+    }
 
 private:
-	// Member order matches initialization order
-	std::ofstream _file;
-	const bool _async{};
-	const bool _auto_flush{};
-	std::mutex _queue_mutex;
-	std::queue<std::string> _message_queue;
-	std::mutex _file_mutex;
-	std::condition_variable_any _condition;
-	std::jthread _worker_thread;
+    std::ofstream _file;
+    const bool _auto_flush{};
+    std::counting_semaphore<> _semaphore{ 0 };
+    std::jthread _worker_thread;
+    daking::MPSC_queue<std::string> _queue;
 };
 
 /*class SentryLoggingListener final : public ILoggingListener {

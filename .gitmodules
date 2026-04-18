@@ -10,3 +10,6 @@
 [submodule "external/sentry"]
 	path = external/sentry
 	url = https://github.com/getsentry/sentry-native.git
+[submodule "external/mpsc_queue"]
+	path = external/mpsc_queue
+	url = https://github.com/dakingffo/MPSC_queue.git

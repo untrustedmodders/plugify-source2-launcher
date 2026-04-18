@@ -77,6 +77,11 @@ set(DYNLIBUTILS_USE_ABI0 OFF CACHE INTERNAL "")
 add_subdirectory(external/dynlibutils)
 
 #
+# Queue
+#
+include_directories(external/mpsc_queue/include)
+
+#
 # Sentry
 #
 add_subdirectory(external/sentry)
