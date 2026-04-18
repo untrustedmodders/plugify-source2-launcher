@@ -17,6 +17,7 @@ on:
 env:
   BUILD_TYPE: Release
   PROJECT_NAME: plugify-source2-launcher
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   setup:
