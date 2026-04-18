@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.10](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.9...v2.2.10) (2026-04-18)
+
+
+### Bug Fixes
+
+* move back to node 20 ([f8ef6e7](https://github.com/untrustedmodders/plugify-source2-launcher/commit/f8ef6e7f57c0ebb300688495038eb3ec23fe82a6))
+
 ## [2.2.9](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.8...v2.2.9) (2026-04-18)
 
 
