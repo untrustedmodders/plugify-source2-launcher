@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.8](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.7...v2.2.8) (2026-04-18)
+
+
+### Bug Fixes
+
+* add log rotation to listener ([19b53d1](https://github.com/untrustedmodders/plugify-source2-launcher/commit/19b53d1fac59b5310fe3897c72a31d0d4ef54cd6))
+* add missing deps ([4c627f3](https://github.com/untrustedmodders/plugify-source2-launcher/commit/4c627f3fa4378b8b48675eef6046e9fc9eccb15e))
+* add new dependency ([4432431](https://github.com/untrustedmodders/plugify-source2-launcher/commit/44324312f0bc0f8a7909a5f8c30a9122c3a4b1d2))
+* improve logging performance ([db34605](https://github.com/untrustedmodders/plugify-source2-launcher/commit/db346058045153afc0a99899a83423710449f573))
+* reset errno before open stream ([b27a445](https://github.com/untrustedmodders/plugify-source2-launcher/commit/b27a4457aa6ca2b7a5aea878ec498636b0018130))
+* update sdk ([917a18a](https://github.com/untrustedmodders/plugify-source2-launcher/commit/917a18a2942a984d9eeb962e5d1b410cd68c8f19))
+
 ## [2.2.7](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.6...v2.2.7) (2026-03-16)
 
 
