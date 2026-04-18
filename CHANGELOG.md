@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.9](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.8...v2.2.9) (2026-04-18)
+
+
+### Bug Fixes
+
+* update node ([f92fcdc](https://github.com/untrustedmodders/plugify-source2-launcher/commit/f92fcdc20204e9bc54d94a69d000b56261b2c524))
+
 ## [2.2.8](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.7...v2.2.8) (2026-04-18)
 
 
