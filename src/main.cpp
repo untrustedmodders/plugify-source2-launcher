@@ -18,6 +18,14 @@
 
 #include <sentry.h>
 
+#if S2_PLATFORM_WINDOWS
+#define sentry_pcall(fn, options, path) fn##w_n(options, path.c_str(), path.size())
+#define sentry_pcall2(fn, path) fn##w_n(path.c_str(), path.size())
+#else
+#define sentry_pcall(fn, options, path) fn##_n(options, path.c_str(), path.size())
+#define sentry_pcall2(fn, path) fn##_n(path.c_str(), path.size())
+#endif
+
 #include <dynlibutils/module.hpp>
 #include <dynlibutils/virtual.hpp>
 #include <dynlibutils/vthook.hpp>
@@ -349,12 +357,6 @@ protected:
 	}
 
 private:
-	static double GetTimestamp() {
-		auto now = std::chrono::system_clock::now();
-		auto duration = now.time_since_epoch();
-		return std::chrono::duration<double>(duration).count();
-	}
-
 	static void AddBreadcrumb(std::string_view message, Severity severity, const Location& location) {
 		if (!s_sentry || !s_breadcrumbs || severity == Severity::Unknown)
 			return;
@@ -369,7 +371,6 @@ private:
 		sentry_value_set_by_key(crumb, "category", sentry_value_new_string_v(category));
 		sentry_value_set_by_key(crumb, "level", sentry_value_new_string_v(level));
 		sentry_value_set_by_key(crumb, "origin", sentry_value_new_string_v(location.module_name()));
-		//sentry_value_set_by_key(crumb, "timestamp", sentry_value_new_double(GetTimestamp()));
 		sentry_value_t data = sentry_value_new_object();
 		sentry_value_set_by_key(data, "line", sentry_value_new_uint64(location.line()));
 		sentry_value_set_by_key(data, "column", sentry_value_new_uint64(location.column()));
@@ -448,26 +449,34 @@ private:
 
 class FileLoggingListener final : public ILoggingListener {
 public:
-    static Result<std::unique_ptr<FileLoggingListener>>
-    Create(const fs::path& filename, bool auto_flush = true) {
-        std::error_code ec;
-        fs::create_directories(filename.parent_path(), ec);
+	static constexpr size_t kMaxBytes = 10 * 1024 * 1024;
 
-        std::ofstream file(filename, std::ios::app);
+    static Result<std::unique_ptr<FileLoggingListener>>
+    Create(fs::path base, size_t max_bytes = kMaxBytes, bool auto_flush = true) {
+    	std::error_code ec;
+    	fs::create_directories(base.parent_path(), ec);
+
+    	auto path = TimestampedPath(base);
+        std::ofstream file(path, std::ios::app);
         if (!file) {
             return MakeError(
                 "Failed to open log file: {} - {}",
-                plg::as_string(filename),
+                plg::as_string(path),
                 std::strerror(errno)
             );
         }
+    	sentry_pcall2(sentry_attach_file, path.native());
 
-        return std::make_unique<FileLoggingListener>(std::move(file), auto_flush);
+        return std::make_unique<FileLoggingListener>(std::move(file), std::move(path), std::move(base), max_bytes, auto_flush);
     }
 
-    explicit FileLoggingListener(std::ofstream&& file, bool auto_flush = true)
+    explicit FileLoggingListener(std::ofstream&& file, fs::path&& path, fs::path&& base, size_t max_bytes, bool auto_flush)
         : _file(std::move(file))
+        , _path(std::move(path))
+        , _base(std::move(base))
+        , _max_bytes(max_bytes)
         , _auto_flush(auto_flush) {
+
         _worker_thread = std::jthread([this](std::stop_token stoken) {
             ProcessQueue(stoken);
         });
@@ -478,13 +487,13 @@ public:
         _semaphore.release();
     }
 
-    FileLoggingListener(const FileLoggingListener&)            = delete;
+    FileLoggingListener(const FileLoggingListener&) = delete;
     FileLoggingListener& operator=(const FileLoggingListener&) = delete;
-    FileLoggingListener(FileLoggingListener&&)                 = delete;
-    FileLoggingListener& operator=(FileLoggingListener&&)      = delete;
+    FileLoggingListener(FileLoggingListener&&) = delete;
+    FileLoggingListener& operator=(FileLoggingListener&&) = delete;
 
     void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
-        if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0 || pMessage == nullptr || pMessage[0] == '\0') { }
+        if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0 || pMessage == nullptr || pMessage[0] == '\0')
             return;
 
         _queue.enqueue(pMessage);
@@ -493,26 +502,42 @@ public:
 
 protected:
     void Write(std::string_view message) {
-        if (!_file)
-            return;
+    	if (ShouldRotate())
+    		RotateLog();
 
-    	auto now     = std::chrono::system_clock::now();
-    	auto seconds = std::chrono::floor<std::chrono::seconds>(now);
+    	WriteMessage(message);
+    }
 
-    	try {
-    		std::chrono::zoned_time zt{std::chrono::current_zone(), seconds};
-    		std::print(_file, "[{:%Y%m%d_%H%M%S}] {}", zt, message);
-    	} catch (const std::runtime_error&) {
-    		std::print(
-				_file,
-				"[{:%Y%m%d_%H%M%S}] {}",
-				std::chrono::utc_clock::from_sys(seconds),
-				message
-			);
-    	}
+	bool ShouldRotate() {
+    	auto pos = _file.tellp();
+    	return pos >= static_cast<std::streamoff>(_max_bytes);
+    }
 
-        if (_auto_flush)
-            _file.flush();
+	void RotateLog() {
+    	_file.close();
+    	_path = TimestampedPath(_base);
+    	_file.open(_path, std::ios::trunc);
+
+    	if (!_file)
+    		// todo: log error
+    		return;
+
+    	sentry_pcall2(sentry_attach_file, _path.native());
+    }
+
+	void WriteMessage(std::string_view message) {
+    	if (!_file)
+    		return;
+
+    	using namespace std::chrono;
+    	auto now = system_clock::now();
+    	auto seconds = floor<std::chrono::seconds>(now);
+    	auto ms = duration_cast<milliseconds>(now - seconds);
+
+    	std::print(_file, "[{:%F %T}.{:03d}] {}", seconds, static_cast<int>(ms.count()), message);
+
+    	if (_auto_flush)
+    		_file.flush();
     }
 
     void ProcessQueue(std::stop_token stoken) {
@@ -526,45 +551,31 @@ protected:
             Write(entry);
     }
 
+	// Helper: turn /logs/session.log → /logs/session-20260418_143022.log
+	static fs::path TimestampedPath(const fs::path& base) {
+    	using namespace std::chrono;
+    	auto now = system_clock::now();
+    	auto seconds = floor<std::chrono::seconds>(now);
+
+    	return base.parent_path()
+		   / std::format(
+			   "{}-{:%Y%m%d_%H%M%S}{}",
+			   plg::as_string(base.stem()),
+			   utc_clock::from_sys(seconds),
+			   plg::as_string(base.extension())
+		   );
+    }
+
 private:
     std::ofstream _file;
+    fs::path _path;
+    fs::path _base;
+	const size_t _max_bytes;
     const bool _auto_flush{};
     std::counting_semaphore<> _semaphore{ 0 };
     std::jthread _worker_thread;
     daking::MPSC_queue<std::string> _queue;
 };
-
-/*class SentryLoggingListener final : public ILoggingListener {
-public:
-	SentryLoggingListener() = default;
-
-	// Explicitly delete copy/move to prevent issues with threading
-	SentryLoggingListener(const SentryLoggingListener&) = delete;
-	SentryLoggingListener& operator=(const SentryLoggingListener&) = delete;
-	SentryLoggingListener(SentryLoggingListener&&) = delete;
-	SentryLoggingListener& operator=(SentryLoggingListener&&) = delete;
-
-	void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
-		if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0) {
-			return;
-		}
-
-		sentry_log(SeverityToLevel(pContext->m_Severity), pMessage, sentry_value_new_null());
-	}
-
-protected:
-	static sentry_level_t SeverityToLevel(LoggingSeverity_t severity) {
-		switch (severity) {
-			case LS_MORE_DETAILED:  return SENTRY_LEVEL_TRACE;
-			case LS_DETAILED:   	return SENTRY_LEVEL_DEBUG;
-			case LS_MESSAGE:		return SENTRY_LEVEL_INFO;
-			case LS_WARNING:		return SENTRY_LEVEL_WARNING;
-			case LS_ASSERT:   		return SENTRY_LEVEL_ERROR;
-			case LS_ERROR:   		return SENTRY_LEVEL_FATAL;
-			default:                return SENTRY_LEVEL_INFO;
-		}
-	}
-}*/
 
 enum class PlugifyState { Wait, Load, Unload, Reload, Quit };
 
@@ -805,20 +816,6 @@ namespace {
 			return {};
 		}
 		return UniqueId{ result };
-	}
-
-	fs::path FormatFileName(std::string_view type, std::string_view format) {
-		using namespace std::chrono;
-		auto now = system_clock::now();
-		auto seconds = floor<std::chrono::seconds>(now);
-		auto ms = duration_cast<milliseconds>(now - seconds);  // %F = YYYY-MM-DD, %T = HH:MM:SS
-		std::string timestamp = std::format("{:%F-%T}", seconds, static_cast<int>(ms.count()));
-		for (auto& c : timestamp) {
-			if (c == ':') {
-				c = '-';
-			}
-		}
-		return std::format("{}-{}.{}", type, timestamp, format);
 	}
 
 	// Filter options
@@ -2844,12 +2841,6 @@ public:
 		// Set DSN
 		sentry_options_set_dsn(options, metadata.dsn.c_str());
 
-#if S2_PLATFORM_WINDOWS
-#define sentry_pcall(fn, options, path) fn##w_n(options, path.c_str(), path.size())
-#else
-#define sentry_pcall(fn, options, path) fn##_n(options, path.c_str(), path.size())
-#endif
-
 		// Set database path
 		sentry_pcall(sentry_options_set_database_path, options, databaseResult->native());
 
@@ -2999,29 +2990,14 @@ public:
 		}
 
 		// Setup console logging if requested
-		std::optional<fs::path> logPath;
 		if (metadata.listen_console.value_or(false)) {
-			auto logFile = exeDir / metadata.logs_path / FormatFileName("session", "log");
-			auto listenerResult = FileLoggingListener::Create(logFile);
+			auto logFile = exeDir / metadata.logs_path / "session.log";
+			auto listenerResult = FileLoggingListener::Create(std::move(logFile));
 			if (!listenerResult) {
 				return MakeError(std::move(listenerResult.error()));
 			} else {
 				s_listener = std::move(*listenerResult);
-				logPath = std::move(logFile);
 			}
-		}
-
-#undef sentry_pcall
-
-#if S2_PLATFORM_WINDOWS
-#define sentry_pcall(fn, path) fn##w_n(path.c_str(), path.size())
-#else
-#define sentry_pcall(fn, path) fn##_n(path.c_str(), path.size())
-#endif
-
-		// Add log file as attachment after init
-		if (logPath) {
-			sentry_pcall(sentry_attach_file, logPath->native());
 		}
 
 		// Add custom attachments
@@ -3030,12 +3006,10 @@ public:
 				fs::path attachmentPath = exeDir / attachment;
 				std::error_code ec;
 				if (fs::exists(attachmentPath, ec)) {
-					sentry_pcall(sentry_attach_file, attachmentPath.native());
+					sentry_pcall2(sentry_attach_file, attachmentPath.native());
 				}
 			}
 		}
-
-#undef sentry_call
 
 		// Initialize Sentry
 		if (sentry_init(options) != 0) {
