@@ -457,6 +457,7 @@ public:
     	fs::create_directories(base.parent_path(), ec);
 
     	auto path = TimestampedPath(base);
+		errno = 0;
         std::ofstream file(path, std::ios::app);
         if (!file) {
             return MakeError(
