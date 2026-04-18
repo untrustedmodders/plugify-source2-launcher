@@ -2681,10 +2681,10 @@ static ConCommand mamba_command("mamba", micromamba_callback, "Micromamba contro
 static ConCommand conda_command("conda", micromamba_callback, "Micromamba control options", 0);
 
 std::unique_ptr<DynLibUtils::CModule> s_server;
-DynLibUtils::CVTFHookAuto<&IGameSystem::ServerGamePostSimulate> s_ServerGamePostSimulate;
+DynLibUtils::CVTFHookAuto<&IGameSystem::ServerPostSimulate> s_ServerPostSimulate;
 
-void ServerGamePostSimulate(IGameSystem* pThis, const EventServerGamePostSimulate_t& msg) {
-	s_ServerGamePostSimulate.Call(pThis, msg);
+void ServerPostSimulate(IGameSystem* pThis, const EventServerPostSimulate_t& msg) {
+	s_ServerPostSimulate.Call(pThis, msg);
 
 	if (!s_plugify) {
 		return;
@@ -3197,7 +3197,7 @@ private:
 
 		if (auto table = server.GetVirtualTableByName("CLightQueryGameSystem")) {
 			DynLibUtils::CVirtualTable vtable(table);
-			s_ServerGamePostSimulate.Hook(vtable, &ServerGamePostSimulate);
+			s_ServerPostSimulate.Hook(vtable, &ServerPostSimulate);
 		} else {
 			return MakeError("Virtual table CLightQueryGameSystem not found");
 		}
@@ -3506,7 +3506,7 @@ int main(int argc, char* argv[]) {
 		SentryInitializer::Shutdown();
 	}
 
-	s_ServerGamePostSimulate.Unhook();
+	s_ServerPostSimulate.Unhook();
 	s_OnAppSystemLoaded.Unhook();
 	s_HostStateMgrQuit.Unhook();
 
