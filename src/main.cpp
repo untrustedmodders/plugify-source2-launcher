@@ -114,7 +114,8 @@ namespace {
 	// 31 0x1F  US   (Unit Separator)          ✅ Safe to use
 }
 
-bool s_sentry, s_breadcrumbs;
+bool s_sentry, s_breadcrumbs; size_t s_breadcrumbs_max = 100;
+
 
 // ANSI Color codes
 struct Colors {
@@ -275,9 +276,15 @@ public:
 		_queue.enqueue(LogEntry{
 			.message = std::string(message),
 			.severity = severity,
+			.timestamp = GetTimestamp(),
 			.location = location
 		});
 		_semaphore.release();
+	}
+
+	static double GetTimestamp() {
+		auto now = std::chrono::system_clock::now();
+		return std::chrono::duration<double>(now.time_since_epoch()).count();
 	}
 
 	void SetLogLevel(Severity minSeverity) override {
@@ -291,10 +298,21 @@ public:
 	void Flush() override {
 	}
 
+	template<typename F>
+	void Foreach(const F& func) {
+		for (const auto& [message, severity, timestamp, location] : _breadcrumbs) {
+			std::string_view type = "default";
+			std::string_view category = severity == Severity::Trace ? "trace" : "log";
+			std::string_view level = severity == Severity::Trace ? "info" : SeverityToLevel(severity);
+			func(type, category, level, message, timestamp, location);
+		}
+	}
+
 protected:
 	struct alignas(std::hardware_constructive_interference_size) LogEntry {
 		std::string message;
 		Severity severity;
+		double timestamp;
 		Location location;
 	};
 
@@ -313,10 +331,15 @@ protected:
 		/* Fatal   */ { LS_ERROR,   S2Colors::MAGENTA },
 	};
 
-	void Write(const LogEntry& entry) {
-		const auto& [message, severity, location] = entry;
+	void Write(LogEntry& entry) {
+		const auto& [message, severity, timestamp, location] = entry;
 
-		AddBreadcrumb(message, severity, location);
+		[[maybe_unused]] auto guard = plg::make_scope_guard([&] {
+			if (s_sentry && s_breadcrumbs && severity != Severity::Unknown) {
+				if (_breadcrumbs.size() > s_breadcrumbs_max) _breadcrumbs.pop_front();
+				_breadcrumbs.push_back(std::move(entry));
+			}
+		});
 
 		if (severity == Severity::Unknown) {
 			WriteMessage(message, severity);
@@ -357,30 +380,6 @@ protected:
 	}
 
 private:
-	static void AddBreadcrumb(std::string_view message, Severity severity, const Location& location) {
-		if (!s_sentry || !s_breadcrumbs || severity == Severity::Unknown)
-			return;
-
-		std::string_view type = "default";
-		std::string_view category = severity == Severity::Trace ? "trace" : "log";
-		std::string_view level = severity == Severity::Trace ? "info" : SeverityToLevel(severity);
-		auto sentry_value_new_string_v = [](std::string_view value) {
-			return sentry_value_new_string_n(value.data(), value.size());
-		};
-		sentry_value_t crumb = sentry_value_new_breadcrumb_n(type.data(), type.size(), message.data(), message.size());
-		sentry_value_set_by_key(crumb, "category", sentry_value_new_string_v(category));
-		sentry_value_set_by_key(crumb, "level", sentry_value_new_string_v(level));
-		sentry_value_set_by_key(crumb, "origin", sentry_value_new_string_v(location.module_name()));
-		sentry_value_t data = sentry_value_new_object();
-		sentry_value_set_by_key(data, "line", sentry_value_new_uint64(location.line()));
-		sentry_value_set_by_key(data, "column", sentry_value_new_uint64(location.column()));
-		sentry_value_set_by_key(data, "file_name", sentry_value_new_string_v(location.file_name()));
-		sentry_value_set_by_key(data, "function_name", sentry_value_new_string_v(location.function_name()));
-		sentry_value_set_by_key(data, "module_name", sentry_value_new_string_v(location.module_name()));
-		sentry_value_set_by_key(crumb, "data", data);
-		sentry_add_breadcrumb(crumb);
-	}
-
 	static std::string
 	FormatMessage(std::string_view message, Severity severity, const Location& location) {
 		using namespace std::chrono;
@@ -445,6 +444,7 @@ private:
 	std::counting_semaphore<> _semaphore{ 0 };
 	std::jthread _worker_thread;
 	daking::MPSC_queue<LogEntry> _queue;
+	std::deque<LogEntry> _breadcrumbs;
 };
 
 class FileLoggingListener final : public ILoggingListener {
@@ -584,6 +584,30 @@ std::shared_ptr<Plugify> s_plugify;
 std::shared_ptr<ConsoleLoggger> s_logger;
 std::unique_ptr<FileLoggingListener> s_listener;
 PlugifyState s_state;
+
+sentry_value_t SentryNativeOnCrash([[maybe_unused]] const sentry_ucontext_t* uctx, sentry_value_t event, [[maybe_unused]] void* userdata) {
+	if (s_logger) s_logger->Foreach([](std::string_view type, std::string_view category, std::string_view level, std::string_view message, double timestamp, const Location& location) {
+		auto sentry_value_new_string_v = [](std::string_view value) {
+			return sentry_value_new_string_n(value.data(), value.size());
+		};
+		sentry_value_t crumb = sentry_value_new_object();
+		sentry_value_set_by_key(crumb, "type", sentry_value_new_string_v(type));
+		sentry_value_set_by_key(crumb, "message", sentry_value_new_string_v(message));
+		sentry_value_set_by_key(crumb, "category", sentry_value_new_string_v(category));
+		sentry_value_set_by_key(crumb, "timestamp", sentry_value_new_double(timestamp));
+		sentry_value_set_by_key(crumb, "level", sentry_value_new_string_v(level));
+		sentry_value_set_by_key(crumb, "origin", sentry_value_new_string_v(location.module_name()));
+		sentry_value_t data = sentry_value_new_object();
+		sentry_value_set_by_key(data, "line", sentry_value_new_uint64(location.line()));
+		sentry_value_set_by_key(data, "column", sentry_value_new_uint64(location.column()));
+		sentry_value_set_by_key(data, "file_name", sentry_value_new_string_v(location.file_name()));
+		sentry_value_set_by_key(data, "function_name", sentry_value_new_string_v(location.function_name()));
+		sentry_value_set_by_key(data, "module_name", sentry_value_new_string_v(location.module_name()));
+		sentry_value_set_by_key(crumb, "data", data);
+		sentry_add_breadcrumb(crumb);
+	});
+	return event;
+}
 
 #define BASE_PATH PLUGIFY_PATH_LITERAL("" S2_GAME_NAME "/" "addons" "/" "plugify" "/")
 #define MAMBA_PATH BASE_PATH PLUGIFY_PATH_LITERAL("bin" "/" S2_BINARY "/" S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX)
@@ -2891,6 +2915,7 @@ public:
 		// Set max breadcrumbs
 		if (metadata.max_breadcrumbs) {
 			sentry_options_set_max_breadcrumbs(options, *metadata.max_breadcrumbs);
+			s_breadcrumbs_max = *metadata.max_breadcrumbs;
 		}
 
 		// Set max spans
@@ -3011,6 +3036,8 @@ public:
 				}
 			}
 		}
+
+		sentry_options_set_on_crash(options, SentryNativeOnCrash, nullptr);
 
 		// Initialize Sentry
 		if (sentry_init(options) != 0) {
