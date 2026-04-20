@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.11](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.10...v2.2.11) (2026-04-20)
+
+
+### Bug Fixes
+
+* improve performance of breadcrumbs ([d2d67bf](https://github.com/untrustedmodders/plugify-source2-launcher/commit/d2d67bfc1c9080d044b7f19b0805177aba6c15ea))
+* remove unused from config ([94b5bc9](https://github.com/untrustedmodders/plugify-source2-launcher/commit/94b5bc9a0409901d1724c09a6feff25820f69113))
+
 ## [2.2.10](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.9...v2.2.10) (2026-04-18)
 
 
