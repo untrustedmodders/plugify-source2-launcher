@@ -16,16 +16,6 @@
 #include <cstdlib>
 #endif
 
-#include <sentry.h>
-
-#if S2_PLATFORM_WINDOWS
-#define sentry_pcall(fn, options, path) fn##w_n(options, path.c_str(), path.size())
-#define sentry_pcall2(fn, path) fn##w_n(path.c_str(), path.size())
-#else
-#define sentry_pcall(fn, options, path) fn##_n(options, path.c_str(), path.size())
-#define sentry_pcall2(fn, path) fn##_n(path.c_str(), path.size())
-#endif
-
 #include <dynlibutils/module.hpp>
 #include <dynlibutils/virtual.hpp>
 #include <dynlibutils/vthook.hpp>
@@ -51,6 +41,7 @@
 #include <convar.h>
 #include <igamesystem.h>
 #include <tier0/logging.h>
+#include <tier0/minidump.h>
 #include <engine/hoststate.h>
 #include <appframework/iappsystem.h>
 
@@ -63,6 +54,24 @@ using Value = glz::generic;
 #else
 using Value = glz::json_t;
 #endif
+
+#include <sentry.h>
+
+#if S2_PLATFORM_WINDOWS
+#define sentry_pcall(fn, options, path) fn##w_n(options, path.c_str(), path.size())
+#define sentry_pcall2(fn, path) fn##w_n(path.c_str(), path.size())
+#else
+#define sentry_pcall(fn, options, path) fn##_n(options, path.c_str(), path.size())
+#define sentry_pcall2(fn, path) fn##_n(path.c_str(), path.size())
+#endif
+
+auto sentry_value_new_string_v = [](std::string_view value) {
+	return sentry_value_new_string_n(value.data(), value.size());
+};
+
+auto sentry_set_tag_v = [](std::string_view key, std::string_view value) {
+	sentry_set_tag_n(key.data(), key.size(), value.data(), value.size());
+};
 
 // Source2 color definitions
 namespace S2Colors {
@@ -466,7 +475,6 @@ public:
                 std::strerror(errno)
             );
         }
-    	sentry_pcall2(sentry_attach_file, path.native());
 
         return std::make_unique<FileLoggingListener>(std::move(file), std::move(path), std::move(base), max_bytes, auto_flush);
     }
@@ -522,8 +530,6 @@ protected:
     	if (!_file)
     		// todo: log error
     		return;
-
-    	sentry_pcall2(sentry_attach_file, _path.native());
     }
 
 	void WriteMessage(std::string_view message) {
@@ -571,7 +577,7 @@ private:
     std::ofstream _file;
     fs::path _path;
     fs::path _base;
-	const size_t _max_bytes;
+	const size_t _max_bytes{};
     const bool _auto_flush{};
     std::counting_semaphore<> _semaphore{ 0 };
     std::jthread _worker_thread;
@@ -587,9 +593,6 @@ PlugifyState s_state;
 
 sentry_value_t SentryNativeOnCrash([[maybe_unused]] const sentry_ucontext_t* uctx, sentry_value_t event, [[maybe_unused]] void* userdata) {
 	if (s_logger) s_logger->Foreach([](std::string_view type, std::string_view category, std::string_view level, std::string_view message, double timestamp, const Location& location) {
-		auto sentry_value_new_string_v = [](std::string_view value) {
-			return sentry_value_new_string_n(value.data(), value.size());
-		};
 		sentry_value_t crumb = sentry_value_new_object();
 		sentry_value_set_by_key(crumb, "type", sentry_value_new_string_v(type));
 		sentry_value_set_by_key(crumb, "message", sentry_value_new_string_v(message));
@@ -606,6 +609,12 @@ sentry_value_t SentryNativeOnCrash([[maybe_unused]] const sentry_ucontext_t* uct
 		sentry_value_set_by_key(crumb, "data", data);
 		sentry_add_breadcrumb(crumb);
 	});
+
+	CMiniDumpComment comment(131072);
+	LoggingSystem_GetLogCapture(&comment, true);
+	sentry_value_t message = sentry_value_new_string(comment.GetStartPointer());
+	sentry_value_set_by_key(event, "message", message);
+
 	return event;
 }
 
@@ -3033,6 +3042,8 @@ public:
 				std::error_code ec;
 				if (fs::exists(attachmentPath, ec)) {
 					sentry_pcall2(sentry_attach_file, attachmentPath.native());
+				} else if (ec) {
+					return MakeError("Failed to attach file: {}", ec.message());
 				}
 			}
 		}
@@ -3043,10 +3054,6 @@ public:
 		if (sentry_init(options) != 0) {
 			return MakeError("Failed to initialize Sentry");
 		}
-
-		auto sentry_set_tag_v = [](std::string_view key, std::string_view value) {
-			sentry_set_tag_n(key.data(), key.size(), value.data(), value.size());
-		};
 
 		sentry_set_tag_v("app.name", S2_PROJECT_NAME);
 		sentry_set_tag_v("app.version", S2_PROJECT_VERSION);
@@ -3183,6 +3190,20 @@ private:
 		return MakeError("{} interface not found", interfaceName);
 	}
 
+	static Result<ConVarRefAbstract> FindConVar(std::string_view conVarName) {
+		ConVarRef conVarRef = g_pCVar->FindConVar(conVarName.data());
+		if (!conVarRef.IsValidRef()) {
+			return MakeError("Invalid ConVar: {}\n", conVarName);
+		}
+
+		ConVarData* conVarData = g_pCVar->GetConVarData(conVarRef);
+		if (conVarData == nullptr) {
+			return MakeError("Failed to get data for cvar: {}\n", conVarName);
+		}
+
+		return ConVarRefAbstract(conVarRef, conVarData);
+	}
+
 	static Result<void> InstallServerHooks() {
 		DynLibUtils::CModule server("server");
 		if (!server) {
@@ -3216,31 +3237,9 @@ private:
 	}
 
 #if S2_PLATFORM_WINDOWS
-	struct MiniDumpHandlerData_t {
-		int32_t nFlags;
-		int32_t nExitCode;
-		PEXCEPTION_POINTERS pExceptionPointers;
-		// ... more
-	};
-
 	static Result<void> SetupCrashHandler() {
-		using MiniDumpHandler = void (*)(MiniDumpHandlerData_t*);
-		using SetMiniDumpHandlerFn = void (*)(MiniDumpHandler, bool);
-
-		DynLibUtils::CModule tier0("tier0");
-		if (!tier0) {
-			return MakeError("Failed to load tier0 module");
-		}
-
-		auto SetMiniDumpHandler = tier0.GetFunctionByName("SetDefaultMiniDumpHandler")
-		                              .RCast<SetMiniDumpHandlerFn>();
-
-		if (!SetMiniDumpHandler) {
-			return MakeError("SetDefaultMiniDumpHandler function not found");
-		}
-
-		SetMiniDumpHandler([](MiniDumpHandlerData_t* data) {
-			sentry_ucontext_t ctx{ .exception_ptrs = *data->pExceptionPointers };
+		SetDefaultMiniDumpHandler([](MiniDumpHandlerData_t* data) {
+			sentry_ucontext_t ctx{ .exception_ptrs = *data->pExceptionInfo };
 			sentry_handle_exception(&ctx);
 		}, true);
 
@@ -3324,6 +3323,16 @@ public:
 		    Colorize(s_sentry ? "enabled" : "disabled", Colors::MAGENTA)
 		);
 
+#if S2_PLATFORM_WINDOWS
+		if (s_sentry) {
+			// Setup crash handler
+			if (auto crashResult = SetupCrashHandler(); !crashResult) {
+				plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), crashResult.error());
+				// Non-fatal: continue without crash handler
+			}
+		}
+#endif
+
 		// Find ICvar interface
 		if (auto cvarResult = FindInterface<ICvar>(dict, CVAR_INTERFACE_VERSION); !cvarResult) {
 			plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), cvarResult.error());
@@ -3338,18 +3347,21 @@ public:
 			// Non-fatal: continue without hooks
 		}
 
-#if S2_PLATFORM_WINDOWS
-		if (s_sentry) {
-			// Setup crash handler
-			if (auto crashResult = SetupCrashHandler(); !crashResult) {
-				plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), crashResult.error());
-				// Non-fatal: continue without crash handler
-			}
-		}
-#endif
-
 		// Register ConVars
 		ConVar_Register(FCVAR_RELEASE | FCVAR_SERVER_CAN_EXECUTE | FCVAR_GAMEDLL);
+
+		// Append sentry tags to identify server
+		if (s_sentry) {
+			if (auto hostname = FindConVar("hostname")) {
+				sentry_set_tag_v("hostname", hostname->GetAs<CUtlString>());
+			}
+			if (auto hostip = FindConVar("hostip")) {
+				sentry_set_tag_v("hostip", hostip->GetAs<CUtlString>());
+			}
+			if (auto hostport = FindConVar("hostport")) {
+				sentry_set_tag_v("hostport", hostport->GetAs<CUtlString>());
+			}
+		}
 
 		// Build base directory path
 		fs::path gameDir(Plat_GetGameDirectory());

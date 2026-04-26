@@ -26,7 +26,7 @@
 
   // Debug and logging
   "debug": false,
-  "listen_console": true,
+  "listen_console": false,
 
   // Enable/disable Sentry
   "enabled": false,
@@ -57,11 +57,11 @@
   // "logger_level": "debug",
 
   // Session tracking
-  // "auto_session_tracking": true,
+  "auto_session_tracking": true,
   // "require_user_consent": false,
 
   // Stack trace processing
-  // "symbolize_stacktraces": false,
+  "symbolize_stacktraces": true,
 
   // Crash reporter options
   // "system_crash_reporter_enabled": false,
