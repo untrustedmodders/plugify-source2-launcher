@@ -1,11 +1,13 @@
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
-#include <queue>
-#include <thread>
-#include <semaphore>
 #include <print>
+#include <queue>
+#include <semaphore>
+#include <thread>
 #include <unordered_set>
+
+#include <inetworksystem.h>
 
 #if S2_PLATFORM_WINDOWS
 #include <windows.h>
@@ -3191,9 +3193,13 @@ private:
 	}
 
 	static Result<ConVarRefAbstract> FindConVar(std::string_view conVarName) {
+		if (!g_pCVar) {
+			return MakeError(CVAR_INTERFACE_VERSION " interface was not found\n");
+		}
+
 		ConVarRef conVarRef = g_pCVar->FindConVar(conVarName.data());
 		if (!conVarRef.IsValidRef()) {
-			return MakeError("Invalid ConVar: {}\n", conVarName);
+			return MakeError("Failed to find cvar: {}\n", conVarName);
 		}
 
 		ConVarData* conVarData = g_pCVar->GetConVarData(conVarRef);
@@ -3236,17 +3242,56 @@ private:
 		return {};
 	}
 
+	static void SetupCrashHandler() {
+		if (!s_sentry)
+			return;
+
 #if S2_PLATFORM_WINDOWS
-	static Result<void> SetupCrashHandler() {
 		SetDefaultMiniDumpHandler([](MiniDumpHandlerData_t* data) {
 			sentry_ucontext_t ctx{ .exception_ptrs = *data->pExceptionInfo };
 			sentry_handle_exception(&ctx);
 		}, true);
-
 		plg::print("{}: Crash handler registered", Colorize("Info", Colors::GREEN));
-		return {};
-	}
 #endif
+	}
+
+	static void SetupServerTags() {
+		if (!s_sentry)
+			return;
+
+		if (auto hostname = FindConVar("hostname")) {
+			sentry_set_tag_v("host.name", hostname->GetAs<CUtlString>());
+		}
+		if (auto hostip = FindConVar("hostip")) {
+			sentry_set_tag_v("host.ip", hostip->GetAs<CUtlString>());
+		}
+		if (auto hostport = FindConVar("hostport")) {
+			sentry_set_tag_v("host.port", hostport->GetAs<CUtlString>());
+		}
+
+		if (g_pNetworkSystem) {
+			sentry_set_tag_v("host.public_ip", g_pNetworkSystem->GetPublicAdr().ToString());
+			sentry_set_tag_v("host.local_ip", g_pNetworkSystem->GetLocalAdr().ToString());
+		}
+	}
+
+	static void FindInterfaces(CAppSystemDict* dict) {
+		// Find ICvar interface
+		if (auto cvarResult = FindInterface<ICvar>(dict, CVAR_INTERFACE_VERSION); !cvarResult) {
+			plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), cvarResult.error());
+			// Non-fatal: continue without ICvar
+		} else {
+			g_pCVar = *cvarResult;
+		}
+
+		// Find INetworkSystem interface
+		if (auto networkResult = FindInterface<INetworkSystem>(dict, NETWORKSYSTEM_INTERFACE_VERSION); !networkResult) {
+			plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), networkResult.error());
+			// Non-fatal: continue without INetworkSystem
+		} else {
+			g_pNetworkSystem = *networkResult;
+		}
+	}
 
 	static Result<fs::path> ValidateMicromamba(const fs::path& exePath) {
 		std::error_code ec;
@@ -3318,55 +3363,33 @@ public:
 
 		// Notify about sentry
 		plg::print(
-		    "{}: Sentry {} in configuration",
-		    Colorize("Info", Colors::BLUE),
-		    Colorize(s_sentry ? "enabled" : "disabled", Colors::MAGENTA)
+			"{}: Sentry {} in configuration",
+			Colorize("Info", Colors::BLUE),
+			Colorize(s_sentry ? "enabled" : "disabled", Colors::MAGENTA)
 		);
 
-#if S2_PLATFORM_WINDOWS
-		if (s_sentry) {
-			// Setup crash handler
-			if (auto crashResult = SetupCrashHandler(); !crashResult) {
-				plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), crashResult.error());
-				// Non-fatal: continue without crash handler
-			}
-		}
-#endif
+		// Setup crash handler
+		SetupCrashHandler();
 
-		// Find ICvar interface
-		if (auto cvarResult = FindInterface<ICvar>(dict, CVAR_INTERFACE_VERSION); !cvarResult) {
-			plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), cvarResult.error());
-			// Non-fatal: continue without ICvar
-		} else {
-			g_pCVar = *cvarResult;
-		}
+		// Find requires interfaces
+		FindInterfaces(dict);
+
+		// Register ConVars
+		ConVar_Register(FCVAR_RELEASE | FCVAR_SERVER_CAN_EXECUTE | FCVAR_GAMEDLL);
+
+		// Append sentry tags to identify server
+		SetupServerTags();
+
+		// Build base directory path
+		fs::path gameDir(Plat_GetGameDirectory());
+		fs::path baseDir = gameDir / BASE_PATH;
+		fs::path exePath = gameDir / MAMBA_PATH;
 
 		// Install server hooks
 		if (auto hookResult = InstallServerHooks(); !hookResult) {
 			plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), hookResult.error());
 			// Non-fatal: continue without hooks
 		}
-
-		// Register ConVars
-		ConVar_Register(FCVAR_RELEASE | FCVAR_SERVER_CAN_EXECUTE | FCVAR_GAMEDLL);
-
-		// Append sentry tags to identify server
-		if (s_sentry) {
-			if (auto hostname = FindConVar("hostname")) {
-				sentry_set_tag_v("hostname", hostname->GetAs<CUtlString>());
-			}
-			if (auto hostip = FindConVar("hostip")) {
-				sentry_set_tag_v("hostip", hostip->GetAs<CUtlString>());
-			}
-			if (auto hostport = FindConVar("hostport")) {
-				sentry_set_tag_v("hostport", hostport->GetAs<CUtlString>());
-			}
-		}
-
-		// Build base directory path
-		fs::path gameDir(Plat_GetGameDirectory());
-		fs::path baseDir = gameDir / BASE_PATH;
-		fs::path exePath = gameDir / MAMBA_PATH;
 
 		// Validate micromamba
 		if (auto mambaResult = ValidateMicromamba(exePath); !mambaResult) {
