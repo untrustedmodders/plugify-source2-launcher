@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.2.12](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.11...v2.2.12) (2026-04-27)
+
+
+### Bug Fixes
+
+* add missing hooks and add more sentry tags ([36b8439](https://github.com/untrustedmodders/plugify-source2-launcher/commit/36b84390913de940a566405ec1ae92d1fbba55a7))
+* improve crash logging for sentry ([0bf8d89](https://github.com/untrustedmodders/plugify-source2-launcher/commit/0bf8d897549640e520a51ba123c84aad2f7aa73f))
+* update deps ([077c361](https://github.com/untrustedmodders/plugify-source2-launcher/commit/077c36140a502c97d80da26b16371c15e8bd2604))
+
 ## [2.2.11](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.10...v2.2.11) (2026-04-20)
 
 
