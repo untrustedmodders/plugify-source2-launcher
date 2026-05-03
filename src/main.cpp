@@ -285,7 +285,7 @@ public:
 			return;
 
 		_queue.enqueue(LogEntry{
-			.message = std::string(message),
+			.message = message,
 			.severity = severity,
 			.timestamp = GetTimestamp(),
 			.location = location
@@ -321,7 +321,7 @@ public:
 
 protected:
 	struct alignas(std::hardware_constructive_interference_size) LogEntry {
-		std::string message;
+		plg::string message;
 		Severity severity;
 		double timestamp;
 		Location location;
