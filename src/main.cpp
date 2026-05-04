@@ -285,7 +285,7 @@ public:
 			return;
 
 		_queue.enqueue(LogEntry{
-			.message = message,
+			.message = std::string(message),
 			.severity = severity,
 			.timestamp = GetTimestamp(),
 			.location = location
@@ -321,7 +321,7 @@ public:
 
 protected:
 	struct alignas(std::hardware_constructive_interference_size) LogEntry {
-		plg::string message;
+		std::string message;
 		Severity severity;
 		double timestamp;
 		Location location;
@@ -383,7 +383,7 @@ protected:
 		LogEntry entry;
 		while (!stoken.stop_requested()) {
 			_semaphore.acquire(); // sleeps until a Log() wakes it
-			if (_queue.try_dequeue(entry)) // spurious wake from destructor: no-op
+			while (_queue.try_dequeue(entry)) // spurious wake from destructor: no-op
 				Write(entry);
 		}
 		while (_queue.try_dequeue(entry))
@@ -453,9 +453,9 @@ private:
 	std::atomic<Severity> _min_severity{ Severity::Unknown };
 	LoggingChannelID_t _channel{ INVALID_LOGGING_CHANNEL_ID };
 	std::counting_semaphore<> _semaphore{ 0 };
-	std::jthread _worker_thread;
 	daking::MPSC_queue<LogEntry> _queue;
 	std::deque<LogEntry> _breadcrumbs;
+	std::jthread _worker_thread;
 };
 
 class FileLoggingListener final : public ILoggingListener {
@@ -553,7 +553,7 @@ protected:
         std::string entry;
         while (!stoken.stop_requested()) {
             _semaphore.acquire();
-            if (_queue.try_dequeue(entry))
+            while (_queue.try_dequeue(entry))
                 Write(entry);
         }
         while (_queue.try_dequeue(entry))
@@ -582,8 +582,8 @@ private:
 	const size_t _max_bytes{};
     const bool _auto_flush{};
     std::counting_semaphore<> _semaphore{ 0 };
-    std::jthread _worker_thread;
     daking::MPSC_queue<std::string> _queue;
+    std::jthread _worker_thread;
 };
 
 enum class PlugifyState { Wait, Load, Unload, Reload, Quit };
