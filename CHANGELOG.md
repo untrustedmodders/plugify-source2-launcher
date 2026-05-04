@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.13](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.12...v2.2.13) (2026-05-04)
+
+
+### Bug Fixes
+
+* jthread destruction order ([44359ed](https://github.com/untrustedmodders/plugify-source2-launcher/commit/44359edd997de4a7baed33a21817c3d1dd7c46ea))
+* linux crash on quit ([98d7947](https://github.com/untrustedmodders/plugify-source2-launcher/commit/98d7947b583e4c12bb9f166191817e2df668bd34))
+
 ## [2.2.12](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.11...v2.2.12) (2026-04-27)
 
 
