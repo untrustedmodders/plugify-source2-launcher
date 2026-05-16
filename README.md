@@ -25,6 +25,8 @@ It is a cutting-edge server-side modding framework designed specifically for Cou
 
 1. **Installation:**
    - Download the latest build from [here](https://github.com/untrustedmodders/plugify-source2-launcher/releases/).
+      - `plugify-source2-launcher` — standalone executable (launcher mode)
+      - `plugify-source2-runtime` — shared library loaded automatically by CS2 (autoload mode)
    - Detailed installation instructions can be found in the [Installation Guide](https://plugify.net/use-cases/standalone-launcher/installation).
 
 2. **Usage:**
@@ -32,6 +34,19 @@ It is a cutting-edge server-side modding framework designed specifically for Cou
 
 3. **Examples:**
    - Check out the [Examples](https://plugify.net/plugins/s2sdk/guides/) directory for samples and use cases to kickstart your modding journey with Plugify.
+
+## Loading Modes
+
+S2-Launcher supports two ways to load Plugify into your CS2 server:
+
+1. **Executable (Launcher mode):**
+   Run `s2launcher` as a standalone executable alongside your server process. Gives you full control over the launch lifecycle.
+
+2. **Shared Library (Autoload mode):**
+   Place `libserver_valve.so` (Linux) into your CS2 game folder and the engine will load Plugify automatically on server startup — no separate process needed.
+
+   > **When to use which?**
+   > Use autoload if you want zero-friction deployment with no extra process to manage. Use the launcher if you need to control startup order or run outside of a CS2 server context.
 
 ## Requirements
 - [CMake](https://cmake.org/download/) - version 3.14 or higher
