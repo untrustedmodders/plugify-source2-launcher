@@ -56,21 +56,21 @@ jobs:
             container: null
             setup_env: msvc
             cmake_flags: ""
-            project_name: ${{ env.PROJECT_NAME }}
+            project_name: plugify-source2-launcher
           - os: ubuntu-latest
             platform: linuxsteamrt64
             arch: x86_64
             container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
             setup_env: gcc14
             cmake_flags: ""
-            project_name: ${{ env.PROJECT_NAME }}
+            project_name: plugify-source2-launcher
           - os: ubuntu-latest
             platform: linuxsteamrt64
             arch: x86_64
             container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
             setup_env: gcc14
             cmake_flags: "-DS2_LAUNCHER=ON"
-            project_name: ${{ env.PROJECT_NAME }}-server
+            project_name: plugify-source2-launcher-server
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
     steps:
@@ -155,11 +155,11 @@ jobs:
       matrix:
         include:
           - platform: win64
-            project_name: ${{ env.PROJECT_NAME }}
+            project_name: plugify-source2-launcher
           - platform: linuxsteamrt64
-            project_name: ${{ env.PROJECT_NAME }}
+            project_name: plugify-source2-launcher
           - platform: linuxsteamrt64
-            project_name: ${{ env.PROJECT_NAME }}-server
+            project_name: plugify-source2-launcher-server
     runs-on: ubuntu-latest
     outputs:
       url: ${{ steps.release.outputs.url }}
