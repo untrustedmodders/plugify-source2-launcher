@@ -69,8 +69,8 @@ jobs:
             arch: x86_64
             container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
             setup_env: gcc14
-            cmake_flags: "-DS2_LAUNCHER=ON"
-            project_name: plugify-source2-launcher-server
+            cmake_flags: "-DS2_LAUNCHER=OFF"
+            project_name: plugify-source2-runtime
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
     steps:
@@ -128,7 +128,7 @@ jobs:
           mkdir -p build/output/csgo/bin/${{ matrix.platform }}/
           cp build/external/plugify/*plugify.* build/output/bin/${{ matrix.platform }}/
           cp build/external/sentry/*sentry.* build/output/bin/${{ matrix.platform }}/
-          if [[ "${{ matrix.project_name }}" = "${{ env.PROJECT_NAME }}-server" ]]; then
+          if [[ "${{ matrix.project_name }}" = "plugify-source2-runtime" ]]; then
             cp build/*server_valve* build/output/csgo/bin/${{ matrix.platform }}/
           else
             cp build/*s2launcher* build/output/bin/${{ matrix.platform }}/
@@ -159,7 +159,7 @@ jobs:
           - platform: linuxsteamrt64
             project_name: plugify-source2-launcher
           - platform: linuxsteamrt64
-            project_name: plugify-source2-launcher-server
+            project_name: plugify-source2-runtime
     runs-on: ubuntu-latest
     outputs:
       url: ${{ steps.release.outputs.url }}
@@ -199,25 +199,25 @@ jobs:
             ## <:plugin_creator:1336096248515657880> New Release: ${{ env.PROJECT_NAME }} ${{ needs.setup.outputs.tag_name }}
       
             ### <:link:1342486300653129811> Downloads: [${{ needs.setup.outputs.tag_name }}](${{ needs.package.outputs.url }})
-      
+
             ### Install via curl:
             **For Linux:**
             ```bash
             cd ./cs2/game
-            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
+            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/plugify-source2-launcher-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
             ```
             
             ### Install via curl:
             **For Linux (Alternative):**
             ```bash
             cd ./cs2/game
-            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-server-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
+            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/plugify-source2-runtime-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
             ```
-      
+            
             **For Windows:**
             ```bash
             cd ./cs2/game
-            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-win64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
+            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/plugify-source2-launcher-build-win64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
             ```
           embed-color: 955135
       
