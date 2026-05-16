@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.2.14](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.13...v2.2.14) (2026-05-16)
+
+
+### Bug Fixes
+
+* add more description ([366c2a7](https://github.com/untrustedmodders/plugify-source2-launcher/commit/366c2a71aee0f6d7987e3e0d977309865ca9a13d))
+* add new linux non launcher build ([d28f67e](https://github.com/untrustedmodders/plugify-source2-launcher/commit/d28f67e00926efda35c64e678bf408d3e527b7cc))
+* add new loading method ([a53461b](https://github.com/untrustedmodders/plugify-source2-launcher/commit/a53461bf8ee5877fc7a4502ff1d053dfbfcc8a94))
+* rename projects for build ([af0b60b](https://github.com/untrustedmodders/plugify-source2-launcher/commit/af0b60b74df11e8ac71e5739c4945a3f03e31f7f))
+* rework non-launcher mode ([4c9aeef](https://github.com/untrustedmodders/plugify-source2-launcher/commit/4c9aeef9d52562f12a568fac081e2ef3ea6fe67f))
+* set launcher as default build ([7570fd0](https://github.com/untrustedmodders/plugify-source2-launcher/commit/7570fd0324032711d4a864ccf662687a76ced4f0))
+* typo in actions ([bb7bd8e](https://github.com/untrustedmodders/plugify-source2-launcher/commit/bb7bd8e9b29f61f7c8b1d141d1478e7dd888e646))
+
 ## [2.2.13](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.12...v2.2.13) (2026-05-04)
 
 
