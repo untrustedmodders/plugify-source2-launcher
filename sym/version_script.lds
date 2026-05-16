@@ -3,5 +3,6 @@
         extern "C++" {
             main;
         };
+        CreateInterface;
     local: *;
 };

@@ -3211,32 +3211,19 @@ private:
 	}
 
 	static Result<void> InstallServerHooks() {
-		DynLibUtils::CModule server("server");
-		if (!server) {
-			return MakeError("Failed to load server module");
-		}
-
-		if (auto table = server.GetVirtualTableByName("CLightQueryGameSystem")) {
+		if (auto table = s_server->GetVirtualTableByName("CLightQueryGameSystem")) {
 			DynLibUtils::CVirtualTable vtable(table);
 			s_ServerPostSimulate.Hook(vtable, &ServerPostSimulate);
 		} else {
 			return MakeError("Virtual table CLightQueryGameSystem not found");
 		}
 
-		DynLibUtils::CModule engine("engine2");
-		if (!engine) {
-			return MakeError("Failed to load engine module");
-		}
-
-		if (auto table = engine.GetVirtualTableByName("CHostStateMgr")) {
+		if (auto table = s_engine->GetVirtualTableByName("CHostStateMgr")) {
 			DynLibUtils::CVirtualTable vtable(table);
 			s_HostStateMgrQuit.Hook(vtable, &HostStateMgrQuit);
 		} else {
 			return MakeError("Virtual table CHostStateMgr not found");
 		}
-
-		s_server = std::make_unique<DynLibUtils::CModule>(std::move(server));
-		s_engine = std::make_unique<DynLibUtils::CModule>(std::move(engine));
 
 		plg::print("{}: Server hooks installed", Colorize("Info", Colors::GREEN));
 		return {};
@@ -3439,6 +3426,36 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
 	}
 }
 
+CreateInterfaceFn s_CreateInterface;
+#if S2_PLATFORM_WINDOWS
+const int flags = LOAD_WITH_ALTERED_SEARCH_PATH;
+#else
+const int flags = RTLD_NOW | RTLD_GLOBAL;
+#endif
+using Source2MainFn = int (*)(
+	void* hInstance,
+	void* hPrevInstance,
+	const char* pszCmdLine,
+	int nShowCmd,
+	const char* pszBaseDir,
+	const char* pszGame
+);
+
+Severity ParseSeverity(int argc, char* argv[]) {
+	Severity severity = Severity::Info;
+
+	for (int i = 1; i < argc; ++i) {
+		std::string_view arg = argv[i];
+
+		if (arg.starts_with("--verbosity=")) {
+			std::string_view value = arg.substr(12); // after '='
+			severity = ParseSeverity(std::string(value));
+		}
+	}
+
+	return severity;
+}
+
 std::optional<fs::path> ExecutablePath() {
 	plg::path_string execPath(MAX_PATH, PLUGIFY_PATH_LITERAL('\0'));
 
@@ -3464,44 +3481,72 @@ std::optional<fs::path> ExecutablePath() {
 	return fs::path(std::move(execPath)).parent_path();
 }
 
-fs::path ResolveBinaryPath() {
+fs::path BinaryPath() {
 	auto path = ExecutablePath().value_or(fs::current_path());
 
 	std::error_code ec;
-	if (fs::is_directory(path, ec) && path.filename() == "game")
-		path /= "bin/" S2_BINARY;
+	if (fs::is_directory(path, ec)) {
+		auto filename = plg::as_string(path.filename());
+
+		if (filename == "game")
+			path /= S2_GAME_NAME "/bin/" S2_BINARY;
+	}
 
 	return path;
 }
 
-Result<void> Initialize(const fs::path& binary_path, Severity severity) {
+fs::path GamePath() {
+	auto path = ExecutablePath().value_or(fs::current_path());
+
+	std::error_code ec;
+	if (fs::is_directory(path, ec)) {
+		auto filename = plg::as_string(path.filename());
+
+		if (filename == S2_BINARY)
+			path = path.parent_path().parent_path();
+
+		filename = plg::as_string(path.filename());
+
+		if (filename == "game")
+			path /= S2_GAME_NAME "/bin/" S2_BINARY;
+	}
+
+	return path;
+}
+
+Result<void> Initialize(Severity severity) {
+	auto binary_path = BinaryPath();
+	auto game_path = GamePath();
+
 	if (!std::is_debugger_present()) {
 		auto result = SentryInitializer::Initialize(binary_path, "sentry.jsonc");
 		if (!result) {
-			return MakeError("Sentry error: {}", result.error());
+			return MakeError(std::move(result.error()));
 		}
 		s_sentry = *result;
 	}
 
 	auto engine_path = binary_path / S2_LIBRARY_PREFIX "engine2" S2_LIBRARY_SUFFIX;
-#if S2_PLATFORM_WINDOWS
-	int flags = LOAD_WITH_ALTERED_SEARCH_PATH;
-#else
-	int flags = RTLD_NOW | RTLD_GLOBAL;
-#endif
+	auto server_path = game_path / S2_LIBRARY_PREFIX "server" S2_LIBRARY_SUFFIX;
 
 	s_engine = std::make_unique<DynLibUtils::CModule>();
 	s_engine->LoadFromPath(plg::as_string(engine_path), flags);
 	if (!s_engine->IsValid()) {
-		return MakeError("Launcher error: {} - {}", s_engine->GetLastError(), plg::as_string(engine_path));
+		return MakeError("{} - {}", s_engine->GetLastError(), plg::as_string(engine_path));
 	}
 
-	s_logger = std::make_shared<ConsoleLoggger>("plugify");
-	s_logger->SetLogLevel(severity);
+	s_server = std::make_unique<DynLibUtils::CModule>();
+	s_server->LoadFromPath(plg::as_string(server_path), flags);
+	if (!s_server->IsValid()) {
+		return MakeError("{} - {}", s_engine->GetLastError(), plg::as_string(server_path));
+	}
 
 	auto table = s_engine->GetVirtualTableByName("CMaterialSystem2AppSystemDict");
 	DynLibUtils::CVirtualTable vtable(table);
 	s_OnAppSystemLoaded.Hook(vtable, &OnAppSystemLoaded);
+
+	s_logger = std::make_shared<ConsoleLoggger>("plugify");
+	s_logger->SetLogLevel(severity);
 
 	return {};
 }
@@ -3522,6 +3567,8 @@ void Shutdown() {
 	g_pCVar = nullptr;
 	g_pSource2Server = nullptr;
 
+	s_CreateInterface = nullptr;
+
 	s_server.reset();
 	s_engine.reset();
 	s_listener.reset();
@@ -3530,39 +3577,21 @@ void Shutdown() {
 
 #if S2_GAME_LAUNCHER
 int main(int argc, char* argv[]) {
-	Severity severity = Severity::Info;
-
-	for (int i = 1; i < argc; ++i) {
-		std::string_view arg = argv[i];
-
-		if (arg.starts_with("--verbosity=")) {
-			std::string_view value = arg.substr(12); // after '='
-			severity = ParseSeverity(std::string(value));
-		}
-	}
-
-	auto binary_path = ResolveBinaryPath();
-
-	auto result = Initialize(binary_path, severity);
+	auto severity = ParseSeverity(argc, argv);
+	auto result = Initialize(severity);
 	if (!result) {
 		std::println(std::cerr, "{}", result.error());
-	}
-
-	using Source2MainFn = int (*)(
-	    void* hInstance,
-	    void* hPrevInstance,
-	    const char* pszCmdLine,
-	    int nShowCmd,
-	    const char* pszBaseDir,
-	    const char* pszGame
-	);
-	auto Source2Main = s_engine->GetFunctionByName("Source2Main").RCast<Source2MainFn>();
-	if (!Source2Main) {
-		std::println(std::cerr, "Failed to find Source2Main function");
 		return 1;
 	}
 
-	auto parent_path = binary_path.generic_string();
+	auto Source2Main = s_engine->GetFunctionByName("Source2Main").RCast<Source2MainFn>();
+	if (!Source2Main) {
+		std::println(std::cerr, "Failed to find Source2Main function");
+		Shutdown();
+		return 1;
+	}
+
+	auto parent_path = BinaryPath().generic_string();
 	auto command_line = argc > 1 ? plg::join(std::span(argv + 1, argc - 1), " ") : "";
 
 	int res = Source2Main(nullptr, nullptr, command_line.c_str(), 0, parent_path.c_str(), S2_GAME_NAME);
@@ -3572,23 +3601,23 @@ int main(int argc, char* argv[]) {
 	return res;
 }
 #else // !S2_GAME_LAUNCHER
-#if !S2_PLATFORM_LINUX
-#error "Shared-library (injection) mode is only supported on Linux."
-#endif
+DLL_EXPORT void* CreateInterface(const char* name, int* rc) {
+	if (!s_CreateInterface) {
+		auto result = Initialize(Severity::Info);
+		if (!result) {
+			std::println(std::cerr, "Error: {}", result.error());
+			return nullptr;
+		}
 
-__attribute__((constructor))
-void init() {
-	auto binary_path = ResolveBinaryPath();
-
-	auto result = Initialize(binary_path, Severity::Info);
-	if (!result) {
-		std::println(std::cerr, "{}", result.error());
+		s_CreateInterface = s_server->GetFunctionByName("CreateInterface").RCast<CreateInterfaceFn>();
+		if (!s_CreateInterface) {
+			std::println(std::cerr, "Failed to find CreateInterface function");
+			Shutdown();
+			return nullptr;
+		}
 	}
-}
 
-__attribute__((destructor))
-void term() {
-	Shutdown();
+	return s_CreateInterface(name, rc);
 }
 
 #endif // S2_GAME_LAUNCHER
