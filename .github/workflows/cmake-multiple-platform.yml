@@ -55,11 +55,22 @@ jobs:
             arch: x64
             container: null
             setup_env: msvc
+            cmake_flags: ""
+            project_name: ${{ env.PROJECT_NAME }}
           - os: ubuntu-latest
             platform: linuxsteamrt64
             arch: x86_64
             container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
             setup_env: gcc14
+            cmake_flags: ""
+            project_name: ${{ env.PROJECT_NAME }}
+          - os: ubuntu-latest
+            platform: linuxsteamrt64
+            arch: x86_64
+            container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
+            setup_env: gcc14
+            cmake_flags: "-DS2_LAUNCHER=ON"
+            project_name: ${{ env.PROJECT_NAME }}-server
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
     steps:
@@ -103,7 +114,7 @@ jobs:
       - name: Configure
         shell: bash -el {0}
         run: |
-          cmake -S . -B build -G "Ninja" -DS2_VERSION="${{ needs.setup.outputs.tag_name }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          cmake -S . -B build -G "Ninja" -DS2_VERSION="${{ needs.setup.outputs.tag_name }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ${{ matrix.cmake_flags }}
 
       - name: Build
         shell: bash -el {0}
@@ -114,9 +125,14 @@ jobs:
         shell: bash -el {0}
         run: |
           mkdir -p build/output/bin/${{ matrix.platform }}/
+          mkdir -p build/output/csgo/bin/${{ matrix.platform }}/
           cp build/external/plugify/*plugify.* build/output/bin/${{ matrix.platform }}/
           cp build/external/sentry/*sentry.* build/output/bin/${{ matrix.platform }}/
-          cp build/s2launcher* build/output/bin/${{ matrix.platform }}/
+          if [[ "${{ matrix.project_name }}" = "${{ env.PROJECT_NAME }}-server" ]]; then
+            cp build/*server_valve* build/output/csgo/bin/${{ matrix.platform }}/
+          else
+            cp build/*s2launcher* build/output/bin/${{ matrix.platform }}/
+          fi
           cp build/external/sentry/crashpad_build/handler/crashpad_handler build/output/bin/${{ matrix.platform }}/
           cp build/sentry.jsonc build/output/bin/${{ matrix.platform }}/
           mkdir -p build/output/csgo/addons/plugify/bin/${{ matrix.platform }}/
@@ -128,7 +144,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.PROJECT_NAME }}-build-${{ matrix.platform }}-${{ needs.setup.outputs.github_sha_short }}
+          name: ${{ matrix.project_name }}-build-${{ matrix.platform }}-${{ needs.setup.outputs.github_sha_short }}
           path: build/output/
           retention-days: 7
 
@@ -137,7 +153,13 @@ jobs:
     if: ${{ needs.setup.outputs.release_created }}
     strategy:
       matrix:
-        platform: [linuxsteamrt64, win64]
+        include:
+          - platform: win64
+            project_name: ${{ env.PROJECT_NAME }}
+          - platform: linuxsteamrt64
+            project_name: ${{ env.PROJECT_NAME }}
+          - platform: linuxsteamrt64
+            project_name: ${{ env.PROJECT_NAME }}-server
     runs-on: ubuntu-latest
     outputs:
       url: ${{ steps.release.outputs.url }}
@@ -145,13 +167,13 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.PROJECT_NAME }}-build-${{ matrix.platform }}-${{ needs.setup.outputs.github_sha_short }}
+          name: ${{ matrix.project_name }}-build-${{ matrix.platform }}-${{ needs.setup.outputs.github_sha_short }}
           path: artifacts/${{ matrix.platform }}
 
       - name: Compress build artifacts
         run: |
           mkdir -p build/${{ matrix.platform }}
-          tar -cjf build/${{ matrix.platform }}/${{ env.PROJECT_NAME }}-build-${{ matrix.platform }}-${{ needs.setup.outputs.github_sha_short }}.tar.bz2 \
+          tar -cjf build/${{ matrix.platform }}/${{ matrix.project_name }}-build-${{ matrix.platform }}-${{ needs.setup.outputs.github_sha_short }}.tar.bz2 \
             -C artifacts/${{ matrix.platform }} .
 
       - name: Upload release asset
@@ -183,6 +205,13 @@ jobs:
             ```bash
             cd ./cs2/game
             curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
+            ```
+            
+            ### Install via curl:
+            **For Linux (Alternative):**
+            ```bash
+            cd ./cs2/game
+            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag_name }}/${{ env.PROJECT_NAME }}-server-build-linuxsteamrt64-${{ needs.setup.outputs.github_sha_short }}.tar.bz2
             ```
       
             **For Windows:**
