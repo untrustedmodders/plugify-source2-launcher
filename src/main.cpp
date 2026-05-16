@@ -3464,69 +3464,49 @@ std::optional<fs::path> ExecutablePath() {
 	return fs::path(std::move(execPath)).parent_path();
 }
 
-int main(int argc, char* argv[]) {
-	Severity severity = Severity::Info;
-
-	for (int i = 1; i < argc; ++i) {
-		std::string_view arg = argv[i];
-
-		if (arg.starts_with("--verbosity=")) {
-			std::string_view value = arg.substr(12); // after '='
-			severity = ParseSeverity(std::string(value));
-		}
-	}
-
-	auto binary_path = ExecutablePath().value_or(fs::current_path());
+fs::path ResolveBinaryPath() {
+	auto path = ExecutablePath().value_or(fs::current_path());
 
 	std::error_code ec;
-	if (fs::is_directory(binary_path, ec) && binary_path.filename() == "game") {
-		binary_path /= "bin/" S2_BINARY;
-	}
+	if (fs::is_directory(path, ec) && path.filename() == "game")
+		path /= "bin/" S2_BINARY;
 
+	return path;
+}
+
+Result<void> Initialize(const fs::path& binary_path, Severity severity) {
 	if (!std::is_debugger_present()) {
 		auto result = SentryInitializer::Initialize(binary_path, "sentry.jsonc");
 		if (!result) {
-			std::println(std::cerr, "Sentry error: {}", result.error());
-			return 1;
+			return MakeError("Sentry error: {}", result.error());
 		}
 		s_sentry = *result;
 	}
 
 	auto engine_path = binary_path / S2_LIBRARY_PREFIX "engine2" S2_LIBRARY_SUFFIX;
-	auto parent_path = binary_path.generic_string();
 #if S2_PLATFORM_WINDOWS
 	int flags = LOAD_WITH_ALTERED_SEARCH_PATH;
 #else
 	int flags = RTLD_NOW | RTLD_GLOBAL;
 #endif
 
-	DynLibUtils::CModule engine{};
-	engine.LoadFromPath(plg::as_string(engine_path), flags);
-	if (!engine) {
-		std::println(std::cerr, "Launcher error: {} - {}", engine.GetLastError(), plg::as_string(engine_path));
-		return 1;
+	s_engine = std::make_unique<DynLibUtils::CModule>();
+	s_engine->LoadFromPath(plg::as_string(engine_path), flags);
+	if (!s_engine->IsValid()) {
+		return MakeError("Launcher error: {} - {}", s_engine->GetLastError(), plg::as_string(engine_path));
 	}
 
 	s_logger = std::make_shared<ConsoleLoggger>("plugify");
 	s_logger->SetLogLevel(severity);
 
-	auto table = engine.GetVirtualTableByName("CMaterialSystem2AppSystemDict");
+	auto table = s_engine->GetVirtualTableByName("CMaterialSystem2AppSystemDict");
 	DynLibUtils::CVirtualTable vtable(table);
 	s_OnAppSystemLoaded.Hook(vtable, &OnAppSystemLoaded);
 
-	using Source2MainFn = int (*)(
-	    void* hInstance,
-	    void* hPrevInstance,
-	    const char* pszCmdLine,
-	    int nShowCmd,
-	    const char* pszBaseDir,
-	    const char* pszGame
-	);
-	auto Source2Main = engine.GetFunctionByName("Source2Main").RCast<Source2MainFn>();
+	return {};
+}
 
-	auto command_line = argc > 1 ? plg::join(std::span(argv + 1, argc - 1), " ") : "";
-	int res = Source2Main(nullptr, nullptr, command_line.c_str(), 0, parent_path.c_str(), S2_GAME_NAME);
-
+void Shutdown() {
 	if (s_listener) {
 		LoggingSystem_PopLoggingState();
 	}
@@ -3546,6 +3526,69 @@ int main(int argc, char* argv[]) {
 	s_engine.reset();
 	s_listener.reset();
 	s_logger.reset();
+}
+
+#if S2_GAME_LAUNCHER
+int main(int argc, char* argv[]) {
+	Severity severity = Severity::Info;
+
+	for (int i = 1; i < argc; ++i) {
+		std::string_view arg = argv[i];
+
+		if (arg.starts_with("--verbosity=")) {
+			std::string_view value = arg.substr(12); // after '='
+			severity = ParseSeverity(std::string(value));
+		}
+	}
+
+	auto binary_path = ResolveBinaryPath();
+
+	auto result = Initialize(binary_path, severity);
+	if (!result) {
+		std::println(std::cerr, "{}", result.error());
+	}
+
+	using Source2MainFn = int (*)(
+	    void* hInstance,
+	    void* hPrevInstance,
+	    const char* pszCmdLine,
+	    int nShowCmd,
+	    const char* pszBaseDir,
+	    const char* pszGame
+	);
+	auto Source2Main = s_engine->GetFunctionByName("Source2Main").RCast<Source2MainFn>();
+	if (!Source2Main) {
+		std::println(std::cerr, "Failed to find Source2Main function");
+		return 1;
+	}
+
+	auto parent_path = binary_path.generic_string();
+	auto command_line = argc > 1 ? plg::join(std::span(argv + 1, argc - 1), " ") : "";
+
+	int res = Source2Main(nullptr, nullptr, command_line.c_str(), 0, parent_path.c_str(), S2_GAME_NAME);
+
+	Shutdown();
 
 	return res;
 }
+#else // !S2_GAME_LAUNCHER
+#if !S2_PLATFORM_LINUX
+#error "Shared-library (injection) mode is only supported on Linux."
+#endif
+
+__attribute__((constructor))
+void init() {
+	auto binary_path = ResolveBinaryPath();
+
+	auto result = Initialize(binary_path, Severity::Info);
+	if (!result) {
+		std::println(std::cerr, "{}", result.error());
+	}
+}
+
+__attribute__((destructor))
+void term() {
+	Shutdown();
+}
+
+#endif // S2_GAME_LAUNCHER
