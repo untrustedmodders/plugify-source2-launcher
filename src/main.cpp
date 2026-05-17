@@ -7,8 +7,6 @@
 #include <thread>
 #include <unordered_set>
 
-#include <inetworksystem.h>
-
 #if S2_PLATFORM_WINDOWS
 #include <windows.h>
 #include <dbghelp.h>
@@ -42,6 +40,8 @@
 #include <eiface.h>
 #include <convar.h>
 #include <igamesystem.h>
+#include <inetworksystem.h>
+#include <icommandline.h>
 #include <tier0/logging.h>
 #include <tier0/minidump.h>
 #include <engine/hoststate.h>
@@ -622,6 +622,9 @@ sentry_value_t SentryNativeOnCrash([[maybe_unused]] const sentry_ucontext_t* uct
 
 #define BASE_PATH PLUGIFY_PATH_LITERAL("" S2_GAME_NAME "/" "addons" "/" "plugify" "/")
 #define MAMBA_PATH BASE_PATH PLUGIFY_PATH_LITERAL("bin" "/" S2_BINARY "/" S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX)
+#define SERVER_PATH PLUGIFY_PATH_LITERAL("" S2_LIBRARY_PREFIX "server" S2_LIBRARY_SUFFIX)
+#define CLIENT_PATH PLUGIFY_PATH_LITERAL("" S2_LIBRARY_PREFIX "client" S2_LIBRARY_SUFFIX)
+#define ENGINE_PATH PLUGIFY_PATH_LITERAL("" S2_LIBRARY_PREFIX "engine2" S2_LIBRARY_SUFFIX)
 
 namespace plg {
 	/*PLUGIFY_FORCE_INLINE void print(const char* msg) {
@@ -2705,15 +2708,14 @@ CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
 static ConCommand mamba_command("mamba", micromamba_callback, "Micromamba control options", 0);
 static ConCommand conda_command("conda", micromamba_callback, "Micromamba control options", 0);
 
-std::unique_ptr<DynLibUtils::CModule> s_server;
+std::unique_ptr<DynLibUtils::CModule> s_module;
+
 DynLibUtils::CVTFHookAuto<&IGameSystem::ServerPostSimulate> s_ServerPostSimulate;
+DynLibUtils::CVTFHookAuto<&IGameSystem::ClientPostSimulate> s_ClientPostSimulate;
 
-void ServerPostSimulate(IGameSystem* pThis, const EventServerPostSimulate_t& msg) {
-	s_ServerPostSimulate.Call(pThis, msg);
-
-	if (!s_plugify) {
+void Update() {
+	if (!s_plugify)
 		return;
-	}
 
 	s_plugify->Update();
 
@@ -2751,6 +2753,18 @@ void ServerPostSimulate(IGameSystem* pThis, const EventServerPostSimulate_t& msg
 	}
 
 	s_state = PlugifyState::Wait;
+}
+
+void ServerPostSimulate(IGameSystem* pThis, const EventServerPostSimulate_t& msg) {
+	s_ServerPostSimulate.Call(pThis, msg);
+
+	Update();
+}
+
+void ClientPostSimulate(IGameSystem* pThis, const EventClientPostSimulate_t& msg) {
+	s_ClientPostSimulate.Call(pThis, msg);
+
+	Update();
 }
 
 static constexpr auto RWX_PERMS =
@@ -3210,10 +3224,11 @@ private:
 		return ConVarRefAbstract(conVarRef, conVarData);
 	}
 
-	static Result<void> InstallServerHooks() {
-		if (auto table = s_server->GetVirtualTableByName("CLightQueryGameSystem")) {
+	static Result<void> InstallGameHooks() {
+		if (auto table = s_module->GetVirtualTableByName("CLightQueryGameSystem")) {
 			DynLibUtils::CVirtualTable vtable(table);
 			s_ServerPostSimulate.Hook(vtable, &ServerPostSimulate);
+			s_ClientPostSimulate.Hook(vtable, &ClientPostSimulate);
 		} else {
 			return MakeError("Virtual table CLightQueryGameSystem not found");
 		}
@@ -3225,7 +3240,7 @@ private:
 			return MakeError("Virtual table CHostStateMgr not found");
 		}
 
-		plg::print("{}: Server hooks installed", Colorize("Info", Colors::GREEN));
+		plg::print("{}: Game hooks installed", Colorize("Info", Colors::GREEN));
 		return {};
 	}
 
@@ -3242,7 +3257,7 @@ private:
 #endif
 	}
 
-	static void SetupServerTags() {
+	static void SetupSentryTags() {
 		if (!s_sentry)
 			return;
 
@@ -3364,16 +3379,16 @@ public:
 		// Register ConVars
 		ConVar_Register(FCVAR_RELEASE | FCVAR_SERVER_CAN_EXECUTE | FCVAR_GAMEDLL);
 
-		// Append sentry tags to identify server
-		SetupServerTags();
+		// Append sentry tags to identify client/server
+		SetupSentryTags();
 
 		// Build base directory path
 		fs::path gameDir(Plat_GetGameDirectory());
 		fs::path baseDir = gameDir / BASE_PATH;
 		fs::path exePath = gameDir / MAMBA_PATH;
 
-		// Install server hooks
-		if (auto hookResult = InstallServerHooks(); !hookResult) {
+		// Install hooks
+		if (auto hookResult = InstallGameHooks(); !hookResult) {
 			plg::print("{}: {}", Colorize("Warning", Colors::YELLOW), hookResult.error());
 			// Non-fatal: continue without hooks
 		}
@@ -3394,9 +3409,8 @@ std::unordered_set<std::string> s_loadList;
 void OnAppSystemLoaded(CAppSystemDict* pThis) {
 	s_OnAppSystemLoaded.Call(pThis);
 
-	if (s_plugify) {
+	if (s_plugify)
 		return;
-	}
 
 	if (s_loadList.empty()) {
 		s_loadList.reserve(static_cast<size_t>(pThis->m_Modules.Count()));
@@ -3441,19 +3455,29 @@ using Source2MainFn = int (*)(
 	const char* pszGame
 );
 
-Severity ParseSeverity(int argc, char* argv[]) {
+Severity HasSeverity(std::span<char*> args, std::string_view param) {
 	Severity severity = Severity::Info;
 
-	for (int i = 1; i < argc; ++i) {
-		std::string_view arg = argv[i];
-
-		if (arg.starts_with("--verbosity=")) {
-			std::string_view value = arg.substr(12); // after '='
-			severity = ParseSeverity(std::string(value));
+	for (std::string_view arg : args) {
+		if (arg.starts_with(param)) {
+			auto value = arg.substr(param.size());
+			if (!value.empty()) {
+				severity = ParseSeverity(std::string(value));
+			}
 		}
 	}
 
 	return severity;
+}
+
+bool HasParameter(std::span<char*> args, std::string_view param) {
+	for (std::string_view arg : args) {
+		if (arg == param) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 std::optional<fs::path> ExecutablePath() {
@@ -3514,20 +3538,28 @@ fs::path GamePath() {
 	return path;
 }
 
-Result<void> Initialize(Severity severity) {
+Result<void> Initialize(std::span<char*> args) {
+	auto severity = HasSeverity(args, "--verbosity=");
+	bool dedicated = HasParameter(args, "-dedicated");
+	bool insecure = HasParameter(args, "-insecure");
+
+	if (!dedicated && !insecure) {
+		return MakeError("Client mode can only be run with -insecure");
+	}
+
 	auto binary_path = BinaryPath();
 	auto game_path = GamePath();
 
 	if (!std::is_debugger_present()) {
-		auto result = SentryInitializer::Initialize(binary_path, "sentry.jsonc");
+		auto result = SentryInitializer::Initialize(binary_path, PLUGIFY_PATH_LITERAL("sentry.jsonc"));
 		if (!result) {
 			return MakeError(std::move(result.error()));
 		}
 		s_sentry = *result;
 	}
 
-	auto engine_path = binary_path / S2_LIBRARY_PREFIX "engine2" S2_LIBRARY_SUFFIX;
-	auto server_path = game_path / S2_LIBRARY_PREFIX "server" S2_LIBRARY_SUFFIX;
+	auto engine_path = binary_path / ENGINE_PATH;
+	auto module_path = game_path / (dedicated ? SERVER_PATH : CLIENT_PATH);
 
 	s_engine = std::make_unique<DynLibUtils::CModule>();
 	s_engine->LoadFromPath(plg::as_string(engine_path), flags);
@@ -3535,10 +3567,10 @@ Result<void> Initialize(Severity severity) {
 		return MakeError("{} - {}", s_engine->GetLastError(), plg::as_string(engine_path));
 	}
 
-	s_server = std::make_unique<DynLibUtils::CModule>();
-	s_server->LoadFromPath(plg::as_string(server_path), flags);
-	if (!s_server->IsValid()) {
-		return MakeError("{} - {}", s_engine->GetLastError(), plg::as_string(server_path));
+	s_module = std::make_unique<DynLibUtils::CModule>();
+	s_module->LoadFromPath(plg::as_string(module_path), flags);
+	if (!s_module->IsValid()) {
+		return MakeError("{} - {}", s_module->GetLastError(), plg::as_string(module_path));
 	}
 
 	auto table = s_engine->GetVirtualTableByName("CMaterialSystem2AppSystemDict");
@@ -3561,26 +3593,25 @@ void Shutdown() {
 	}
 
 	s_ServerPostSimulate.Unhook();
+	s_ClientPostSimulate.Unhook();
 	s_OnAppSystemLoaded.Unhook();
 	s_HostStateMgrQuit.Unhook();
 
-	g_pCVar = nullptr;
-	g_pSource2Server = nullptr;
-
-	s_CreateInterface = nullptr;
-
-	s_server.reset();
+	s_module.reset();
 	s_engine.reset();
 	s_listener.reset();
 	s_logger.reset();
+
+	g_pCVar = nullptr;
+	s_CreateInterface = nullptr;
 }
 
 #if S2_GAME_LAUNCHER
 int main(int argc, char* argv[]) {
-	auto severity = ParseSeverity(argc, argv);
-	auto result = Initialize(severity);
+	std::span args(argv, argc);
+	auto result = Initialize(args);
 	if (!result) {
-		std::println(std::cerr, "{}", result.error());
+		std::println(std::cerr, "Error: {}", result.error());
 		return 1;
 	}
 
@@ -3603,13 +3634,15 @@ int main(int argc, char* argv[]) {
 #else // !S2_GAME_LAUNCHER
 DLL_EXPORT void* CreateInterface(const char* name, int* rc) {
 	if (!s_CreateInterface) {
-		auto result = Initialize(Severity::Info);
+		ICommandLine* command = CommandLine();
+		std::span args(command->GetParms(), command->ParmCount());
+		auto result = Initialize(args);
 		if (!result) {
 			std::println(std::cerr, "Error: {}", result.error());
 			return nullptr;
 		}
 
-		s_CreateInterface = s_server->GetFunctionByName("CreateInterface").RCast<CreateInterfaceFn>();
+		s_CreateInterface = s_module->GetFunctionByName("CreateInterface").RCast<CreateInterfaceFn>();
 		if (!s_CreateInterface) {
 			std::println(std::cerr, "Failed to find CreateInterface function");
 			Shutdown();
