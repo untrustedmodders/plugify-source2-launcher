@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.0](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.14...v2.3.0) (2026-05-17)
+
+
+### Features
+
+* add support of client mode and other improvements ([79e8852](https://github.com/untrustedmodders/plugify-source2-launcher/commit/79e88529e6a2c05c22b64b681adf449599d77524))
+
+
+### Bug Fixes
+
+* some refactoring ([c734cbe](https://github.com/untrustedmodders/plugify-source2-launcher/commit/c734cbe1871e3700ba9816592b2a8a70b8f3d0ac))
+
 ## [2.2.14](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.13...v2.2.14) (2026-05-16)
 
 
