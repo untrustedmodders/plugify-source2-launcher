@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.3.0...v2.3.1) (2026-05-17)
+
+
+### Bug Fixes
+
+* linux build ([7eb00b0](https://github.com/untrustedmodders/plugify-source2-launcher/commit/7eb00b0bbe1117a8b30265beb7eeb478cf3e2b0c))
+
 ## [2.3.0](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.2.14...v2.3.0) (2026-05-17)
 
 
