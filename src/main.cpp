@@ -3630,7 +3630,7 @@ int main(int argc, char* argv[]) {
 DLL_EXPORT void* CreateInterface(const char* name, int* rc) {
 	if (!s_CreateInterface) {
 		ICommandLine* command = CommandLine();
-		std::span args(command->GetParms(), command->ParmCount());
+		std::span args(const_cast<char**>(command->GetParms()), command->ParmCount());
 		auto result = Initialize(args);
 		if (!result) {
 			std::println(std::cerr, "Error: {}", result.error());
