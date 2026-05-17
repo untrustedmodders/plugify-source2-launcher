@@ -622,6 +622,7 @@ sentry_value_t SentryNativeOnCrash([[maybe_unused]] const sentry_ucontext_t* uct
 
 #define BASE_PATH PLUGIFY_PATH_LITERAL("" S2_GAME_NAME "/" "addons" "/" "plugify" "/")
 #define MAMBA_PATH BASE_PATH PLUGIFY_PATH_LITERAL("bin" "/" S2_BINARY "/" S2_EXECUTABLE_PREFIX "micromamba" S2_EXECUTABLE_SUFFIX)
+#define BINARY_PATH PLUGIFY_PATH_LITERAL("" S2_GAME_NAME "/bin/" S2_BINARY)
 #define SERVER_PATH PLUGIFY_PATH_LITERAL("" S2_LIBRARY_PREFIX "server" S2_LIBRARY_SUFFIX)
 #define CLIENT_PATH PLUGIFY_PATH_LITERAL("" S2_LIBRARY_PREFIX "client" S2_LIBRARY_SUFFIX)
 #define ENGINE_PATH PLUGIFY_PATH_LITERAL("" S2_LIBRARY_PREFIX "engine2" S2_LIBRARY_SUFFIX)
@@ -3457,7 +3458,7 @@ using Source2MainFn = int (*)(
 
 Severity HasSeverity(std::span<char*> args, std::string_view param) {
 	Severity severity = Severity::Info;
-
+	
 	for (std::string_view arg : args) {
 		if (arg.starts_with(param)) {
 			auto value = arg.substr(param.size());
@@ -3466,7 +3467,7 @@ Severity HasSeverity(std::span<char*> args, std::string_view param) {
 			}
 		}
 	}
-
+	
 	return severity;
 }
 
@@ -3476,7 +3477,7 @@ bool HasParameter(std::span<char*> args, std::string_view param) {
 			return true;
 		}
 	}
-
+	
 	return false;
 }
 
@@ -3510,10 +3511,8 @@ fs::path BinaryPath() {
 
 	std::error_code ec;
 	if (fs::is_directory(path, ec)) {
-		auto filename = plg::as_string(path.filename());
-
-		if (filename == "game")
-			path /= S2_GAME_NAME "/bin/" S2_BINARY;
+		if (plg::as_string(path.filename()) == "game")
+			path /= BINARY_PATH;
 	}
 
 	return path;
@@ -3524,15 +3523,11 @@ fs::path GamePath() {
 
 	std::error_code ec;
 	if (fs::is_directory(path, ec)) {
-		auto filename = plg::as_string(path.filename());
-
-		if (filename == S2_BINARY)
+		if (plg::as_string(path.filename()) == S2_BINARY)
 			path = path.parent_path().parent_path();
 
-		filename = plg::as_string(path.filename());
-
-		if (filename == "game")
-			path /= S2_GAME_NAME "/bin/" S2_BINARY;
+		if (plg::as_string(path.filename()) == "game")
+			path /= BINARY_PATH;
 	}
 
 	return path;
