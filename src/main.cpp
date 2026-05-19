@@ -3598,6 +3598,7 @@ void Shutdown() {
 	s_logger.reset();
 
 	g_pCVar = nullptr;
+	g_pNetworkSystem = nullptr;
 	s_CreateInterface = nullptr;
 }
 
@@ -3646,6 +3647,11 @@ DLL_EXPORT void* CreateInterface(const char* name, int* rc) {
 	}
 
 	return s_CreateInterface(name, rc);
+}
+
+__attribute__((destructor))
+void DestroyInterface() {
+	Shutdown();
 }
 
 #endif // S2_GAME_LAUNCHER
