@@ -1,3 +1,5 @@
+include(FetchContent)
+
 message(STATUS "Pulling and configuring reproc")
 
 set(REPROC++ ON)

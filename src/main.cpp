@@ -25,6 +25,7 @@
 #include <glaze/toml.hpp>
 #include <reproc++/drain.hpp>
 #include <reproc++/reproc.hpp>
+#include <tracy/TracyC.h>
 #include <daking/MPSC_queue.hpp>
 
 #include <plugify/assembly.hpp>
@@ -586,10 +587,38 @@ private:
     std::jthread _worker_thread;
 };
 
+class TracyProfiler final : public IProfiler {
+public:
+	TracyProfiler() = default;
+
+	ZoneHandle BeginZone(const ZoneInfo& info) override {
+		auto id = info.name.empty() ?
+			___tracy_alloc_srcloc(static_cast<uint32_t>(info.line), info.file.data(), info.file.size(), info.function.data(), info.function.size(), info.color) :
+			___tracy_alloc_srcloc_name(static_cast<uint32_t>(info.line), info.file.data(), info.file.size(), info.function.data(), info.function.size(), info.name.data(), info.name.size(), info.color);
+		return std::bit_cast<ZoneHandle>(___tracy_emit_zone_begin_alloc(id, 1));
+	}
+
+    void EndZone(ZoneHandle zone) override {
+        ___tracy_emit_zone_end(std::bit_cast<TracyCZoneCtx>(zone));
+    }
+
+    void MarkFrame(std::string_view name) override {
+	    ___tracy_emit_frame_mark(name.data());
+    }
+
+    void SetThread(std::string_view name) override {
+        ___tracy_set_thread_name(name.data());
+    }
+
+	std::string_view GetName() const override { return "Tracy"; }
+    bool IsActive() const override { return true; }
+};
+
 enum class PlugifyState { Wait, Load, Unload, Reload, Quit };
 
 std::shared_ptr<Plugify> s_plugify;
 std::shared_ptr<ConsoleLoggger> s_logger;
+std::shared_ptr<TracyProfiler> s_profiler;
 std::unique_ptr<FileLoggingListener> s_listener;
 PlugifyState s_state;
 
@@ -2748,6 +2777,8 @@ void Update() {
 		}
 		case PlugifyState::Quit:
 			s_plugify.reset();
+			g_pCVar = nullptr;
+			g_pNetworkSystem = nullptr;
 			return;
 		case PlugifyState::Wait:
 			return;
@@ -3332,6 +3363,7 @@ private:
 		// Create context
 		auto buildResult = Plugify::CreateBuilder()
 			.WithLogger(s_logger)
+			.WithProfiler(s_profiler)
 			.WithPaths(std::move(paths))
 			.Build();
 
@@ -3535,6 +3567,7 @@ fs::path GamePath() {
 
 Result<void> Initialize(std::span<char*> args) {
 	auto severity = HasSeverity(args, "--verbosity=");
+	bool profiler = HasParameter(args, "--profiler");
 	bool dedicated = HasParameter(args, "-dedicated");
 	bool insecure = HasParameter(args, "-insecure");
 
@@ -3575,6 +3608,8 @@ Result<void> Initialize(std::span<char*> args) {
 	s_logger = std::make_shared<ConsoleLoggger>("plugify");
 	s_logger->SetLogLevel(severity);
 
+	if (profiler) s_profiler = std::make_shared<TracyProfiler>();
+
 	return {};
 }
 
@@ -3592,13 +3627,12 @@ void Shutdown() {
 	s_OnAppSystemLoaded.Unhook();
 	s_HostStateMgrQuit.Unhook();
 
+	s_listener.reset();
+	s_profiler.reset();
+	s_logger.reset();
 	s_module.reset();
 	s_engine.reset();
-	s_listener.reset();
-	s_logger.reset();
 
-	g_pCVar = nullptr;
-	g_pNetworkSystem = nullptr;
 	s_CreateInterface = nullptr;
 }
 
@@ -3647,11 +3681,6 @@ DLL_EXPORT void* CreateInterface(const char* name, int* rc) {
 	}
 
 	return s_CreateInterface(name, rc);
-}
-
-__attribute__((destructor))
-void DestroyInterface() {
-	Shutdown();
 }
 
 #endif // S2_GAME_LAUNCHER
