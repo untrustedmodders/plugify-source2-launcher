@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.4.0](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.3.1...v2.4.0) (2026-05-25)
+
+
+### Features
+
+* add profiler ([8942ed1](https://github.com/untrustedmodders/plugify-source2-launcher/commit/8942ed1b62d42be6b7f54df37204cc0466e12022))
+
+
+### Bug Fixes
+
+* add missing unload in runtime mode ([383e2b3](https://github.com/untrustedmodders/plugify-source2-launcher/commit/383e2b3fc07c8e5bdfd8ba07d6a29cec0e1e44d9))
+
 ## [2.3.1](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.3.0...v2.3.1) (2026-05-17)
 
 
