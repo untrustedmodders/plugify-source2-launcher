@@ -2406,8 +2406,10 @@ namespace {
 	}
 };
 
+constexpr uint64 command_flags = FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY | FCVAR_RELEASE;
+
 // Main command handler using CLI11
-CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
+CON_COMMAND_F(plugify, "Plugify control options", command_flags) {
 	if (!s_plugify || !s_plugify->IsInitialized()) {
 		plg::print("{}: Initialize system before use.", Colorize("Error", Colors::RED));
 		return;
@@ -2589,10 +2591,10 @@ CON_COMMAND_F(plugify, "Plugify control options", FCVAR_NONE) {
 }
 
 // Alternative shorter command
-static ConCommand plg_command("plg", plugify_callback, "Plugify control options", 0);
-static ConCommand pkg_command("plug", plugify_callback, "Micromamba control options", 0);
+static ConCommand plg_command("plg", plugify_callback, "Plugify control options", command_flags);
+static ConCommand pkg_command("plug", plugify_callback, "Micromamba control options", command_flags);
 
-CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
+CON_COMMAND_F(micromamba, "Micromamba control options", command_flags) {
 	if (s_plugify && s_plugify->IsInitialized() && s_plugify->GetManager().IsInitialized()) {
 		plg::print(
 			"{}: Package operations are only allowed when plugin manager is unloaded\n"
@@ -2735,8 +2737,8 @@ CON_COMMAND_F(micromamba, "Micromamba control options", FCVAR_NONE) {
 }
 
 // Alternative shorter command
-static ConCommand mamba_command("mamba", micromamba_callback, "Micromamba control options", 0);
-static ConCommand conda_command("conda", micromamba_callback, "Micromamba control options", 0);
+static ConCommand mamba_command("mamba", micromamba_callback, "Micromamba control options", command_flags);
+static ConCommand conda_command("conda", micromamba_callback, "Micromamba control options", command_flags);
 
 std::unique_ptr<DynLibUtils::CModule> s_module;
 
@@ -3410,7 +3412,7 @@ public:
 		FindInterfaces(dict);
 
 		// Register ConVars
-		ConVar_Register(FCVAR_RELEASE | FCVAR_SERVER_CAN_EXECUTE | FCVAR_GAMEDLL);
+		ConVar_Register(command_flags);
 
 		// Append sentry tags to identify client/server
 		SetupSentryTags();
