@@ -837,7 +837,7 @@ namespace {
 			if (!ec) {
 				totalSize += sz;
 			}
-		} else if (fs::is_directory(path)) {
+		} else if (fs::is_directory(path, ec)) {
 			for (auto& entry : fs::recursive_directory_iterator(
 			         path,
 			         fs::directory_options::skip_permission_denied,
@@ -3477,9 +3477,12 @@ void OnAppSystemLoaded(CAppSystemDict* pThis) {
 
 CreateInterfaceFn s_CreateInterface;
 #if S2_PLATFORM_WINDOWS
-const int flags = LOAD_WITH_ALTERED_SEARCH_PATH;
+constexpr int flags = LOAD_WITH_ALTERED_SEARCH_PATH;
+constexpr int engine_flags = flags;
+constexpr int module_flags = flags;
 #else
-const int flags = RTLD_NOW | RTLD_GLOBAL;
+constexpr int engine_flags = RTLD_LAZY | RTLD_DEEPBIND;
+constexpr int module_flags = RTLD_LAZY | RTLD_GLOBAL;
 #endif
 using Source2MainFn = int (*)(
 	void* hInstance,
@@ -3515,33 +3518,33 @@ bool HasParameter(std::span<char*> args, std::string_view param) {
 	return false;
 }
 
-std::optional<fs::path> ExecutablePath() {
-	plg::path_string execPath(MAX_PATH, PLUGIFY_PATH_LITERAL('\0'));
+fs::path ExecutablePath() {
+	plg::path_string path(MAX_PATH, PLUGIFY_PATH_LITERAL('\0'));
 
 	while (true) {
 #if S2_PLATFORM_WINDOWS
-		size_t len = ::GetModuleFileNameW(nullptr, execPath.data(), static_cast<DWORD>(execPath.length()));
+		const DWORD len = ::GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.length()));
 		if (len == 0)
 #elif S2_PLATFORM_LINUX
-		ssize_t len = ::readlink("/proc/self/exe", execPath.data(), execPath.length());
+		const ssize_t len = ::readlink("/proc/self/exe", path.data(), path.length());
 		if (len == -1)
 #endif
 		{
-			return std::nullopt;
+			return fs::current_path() / S2_EXECUTABLE_PREFIX S2_PROJECT_PACKAGE S2_EXECUTABLE_SUFFIX;
 		}
-
-		if (len < execPath.length()) {
+		const size_t written = static_cast<size_t>(len);
+		if (written < path.length()) {
+			path.resize(written);
 			break;
 		}
-
-		execPath.resize(execPath.length() * 2);
+		path.resize(path.length() * 2);
 	}
 
-	return fs::path(std::move(execPath)).parent_path();
+	return { std::move(path) };
 }
 
 fs::path BinaryPath() {
-	auto path = ExecutablePath().value_or(fs::current_path());
+	auto path = ExecutablePath().parent_path();
 
 	std::error_code ec;
 	if (fs::is_directory(path, ec)) {
@@ -3553,7 +3556,7 @@ fs::path BinaryPath() {
 }
 
 fs::path GamePath() {
-	auto path = ExecutablePath().value_or(fs::current_path());
+	auto path = ExecutablePath().parent_path();
 
 	std::error_code ec;
 	if (fs::is_directory(path, ec)) {
@@ -3579,7 +3582,7 @@ Result<void> Initialize(std::span<char*> args) {
 
 	auto binary_path = BinaryPath();
 	auto game_path = GamePath();
-
+	
 	if (!std::is_debugger_present()) {
 		auto result = SentryInitializer::Initialize(binary_path, PLUGIFY_PATH_LITERAL("sentry.jsonc"));
 		if (!result) {
@@ -3592,13 +3595,13 @@ Result<void> Initialize(std::span<char*> args) {
 	auto module_path = game_path / (dedicated ? SERVER_PATH : CLIENT_PATH);
 
 	s_engine = std::make_unique<DynLibUtils::CModule>();
-	s_engine->LoadFromPath(plg::as_string(engine_path), flags);
+	s_engine->LoadFromPath(plg::as_string(engine_path), engine_flags);
 	if (!s_engine->IsValid()) {
 		return MakeError("{} - {}", s_engine->GetLastError(), plg::as_string(engine_path));
 	}
 
 	s_module = std::make_unique<DynLibUtils::CModule>();
-	s_module->LoadFromPath(plg::as_string(module_path), flags);
+	s_module->LoadFromPath(plg::as_string(module_path), module_flags);
 	if (!s_module->IsValid()) {
 		return MakeError("{} - {}", s_module->GetLastError(), plg::as_string(module_path));
 	}
@@ -3649,7 +3652,7 @@ int main(int argc, char* argv[]) {
 
 	auto Source2Main = s_engine->GetFunctionByName("Source2Main").RCast<Source2MainFn>();
 	if (!Source2Main) {
-		std::println(std::cerr, "Failed to find Source2Main function");
+		std::println(std::cerr, "Error: Failed to find Source2Main function in '{}'", s_engine->GetPath());
 		Shutdown();
 		return 1;
 	}
@@ -3666,6 +3669,11 @@ int main(int argc, char* argv[]) {
 #else // !S2_GAME_LAUNCHER
 DLL_EXPORT void* CreateInterface(const char* name, int* rc) {
 	if (!s_CreateInterface) {
+		if (plg::as_string(ExecutablePath().filename()) == S2_PROJECT_PACKAGE) {
+			std::println(std::cerr, "Error: Unsupported launcher detected");
+			return nullptr;
+		}
+
 		ICommandLine* command = CommandLine();
 		std::span args(const_cast<char**>(command->GetParms()), command->ParmCount());
 		auto result = Initialize(args);
@@ -3676,7 +3684,7 @@ DLL_EXPORT void* CreateInterface(const char* name, int* rc) {
 
 		s_CreateInterface = s_module->GetFunctionByName("CreateInterface").RCast<CreateInterfaceFn>();
 		if (!s_CreateInterface) {
-			std::println(std::cerr, "Failed to find CreateInterface function");
+			std::println(std::cerr, "Error: Failed to find CreateInterface function in '{}'", s_module->GetPath());
 			Shutdown();
 			return nullptr;
 		}
