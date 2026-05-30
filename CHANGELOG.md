@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.2](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.1...v2.4.2) (2026-05-30)
+
+
+### Bug Fixes
+
+* add missing cmake var ([766bd32](https://github.com/untrustedmodders/plugify-source2-launcher/commit/766bd326c53dcea5c749bed6ed9dec1ad9bb67de))
+
 ## [2.4.1](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.0...v2.4.1) (2026-05-30)
 
 
