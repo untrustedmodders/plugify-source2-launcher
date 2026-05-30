@@ -3543,7 +3543,7 @@ fs::path ExecutablePath() {
 	return { std::move(path) };
 }
 
-fs::path BinaryPath() {
+fs::path RootPath() {
 	auto path = ExecutablePath().parent_path();
 
 	std::error_code ec;
@@ -3580,18 +3580,18 @@ Result<void> Initialize(std::span<char*> args) {
 		return MakeError("Client mode can only be run with -insecure");
 	}
 
-	auto binary_path = BinaryPath();
+	auto root_path = RootPath();
 	auto game_path = GamePath();
 	
 	if (!std::is_debugger_present()) {
-		auto result = SentryInitializer::Initialize(binary_path, PLUGIFY_PATH_LITERAL("sentry.jsonc"));
+		auto result = SentryInitializer::Initialize(root_path, PLUGIFY_PATH_LITERAL("sentry.jsonc"));
 		if (!result) {
 			return MakeError(std::move(result.error()));
 		}
 		s_sentry = *result;
 	}
 
-	auto engine_path = binary_path / ENGINE_PATH;
+	auto engine_path = root_path / ENGINE_PATH;
 	auto module_path = game_path / (dedicated ? SERVER_PATH : CLIENT_PATH);
 
 	s_engine = std::make_unique<DynLibUtils::CModule>();
@@ -3657,7 +3657,7 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
-	auto parent_path = BinaryPath().generic_string();
+	auto parent_path = RootPath().generic_string();
 	auto command_line = argc > 1 ? plg::join(std::span(argv + 1, argc - 1), " ") : "";
 
 	int res = Source2Main(nullptr, nullptr, command_line.c_str(), 0, parent_path.c_str(), S2_GAME_NAME);
