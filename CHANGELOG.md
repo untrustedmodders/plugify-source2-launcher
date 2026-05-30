@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.4.1](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.0...v2.4.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* add more flags for commands ([3054dbb](https://github.com/untrustedmodders/plugify-source2-launcher/commit/3054dbb99cc69b80a5577c2bcd77bd15caab1146))
+* new module flags and prevent loading runtime with launcher ([63f8fe3](https://github.com/untrustedmodders/plugify-source2-launcher/commit/63f8fe305345422f4f322ed86893485746493f99))
+* update plugify ([8727988](https://github.com/untrustedmodders/plugify-source2-launcher/commit/87279884728e6dc5a29ca25322bb1cfc89b33790))
+
 ## [2.4.0](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.3.1...v2.4.0) (2026-05-25)
 
 
