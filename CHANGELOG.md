@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.3](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.2...v2.4.3) (2026-06-02)
+
+
+### Bug Fixes
+
+* remove deepbind flag ([2fb7eb3](https://github.com/untrustedmodders/plugify-source2-launcher/commit/2fb7eb3a6ffb344ac84cde189ee0ba86be03cddc))
+
 ## [2.4.2](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.1...v2.4.2) (2026-05-30)
 
 
