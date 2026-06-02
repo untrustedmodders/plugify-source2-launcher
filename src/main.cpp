@@ -3481,8 +3481,9 @@ constexpr int flags = LOAD_WITH_ALTERED_SEARCH_PATH;
 constexpr int engine_flags = flags;
 constexpr int module_flags = flags;
 #else
-constexpr int engine_flags = RTLD_LAZY | RTLD_DEEPBIND;
-constexpr int module_flags = RTLD_LAZY | RTLD_GLOBAL;
+constexpr int flags = RTLD_LAZY | RTLD_LOCAL;
+constexpr int engine_flags = flags;
+constexpr int module_flags = flags;
 #endif
 using Source2MainFn = int (*)(
 	void* hInstance,
