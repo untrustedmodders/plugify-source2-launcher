@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.5](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.4...v2.4.5) (2026-06-14)
+
+
+### Bug Fixes
+
+* update flags tracy ([298cb81](https://github.com/untrustedmodders/plugify-source2-launcher/commit/298cb8138076c0e5579e75c2269b0593faf91ab4))
+
 ## [2.4.4](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.3...v2.4.4) (2026-06-14)
 
 
