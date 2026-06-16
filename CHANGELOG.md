@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.6](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.5...v2.4.6) (2026-06-16)
+
+
+### Bug Fixes
+
+* improve logging performance ([9a12b49](https://github.com/untrustedmodders/plugify-source2-launcher/commit/9a12b490df529bddbdee7854c4d907067ca69340))
+
 ## [2.4.5](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.4...v2.4.5) (2026-06-14)
 
 
