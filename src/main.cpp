@@ -1,10 +1,14 @@
+#include <cstdint>
 #include <chrono>
-#include <condition_variable>
-#include <filesystem>
+#include <vector>
+#include <memory>
+#include <string>
 #include <print>
-#include <queue>
-#include <semaphore>
-#include <thread>
+#include <deque>
+#include <fstream>
+#include <optional>
+#include <algorithm>
+#include <filesystem>
 #include <unordered_set>
 
 #if S2_PLATFORM_WINDOWS
@@ -26,7 +30,6 @@
 #include <reproc++/drain.hpp>
 #include <reproc++/reproc.hpp>
 #include <tracy/TracyC.h>
-#include <daking/MPSC_queue.hpp>
 
 #include <plugify/assembly.hpp>
 #include <plugify/extension.hpp>
@@ -49,7 +52,6 @@
 #include <appframework/iappsystem.h>
 
 using namespace plugify;
-using namespace std::string_view_literals;
 namespace fs = std::filesystem;
 
 #if __has_include(<glaze/yaml.hpp>)
@@ -242,15 +244,9 @@ public:
 		Color color = UNSPECIFIED_LOGGING_COLOR
 	) {
 		_channel = LoggingSystem_RegisterLoggingChannel(name, nullptr, flags, verbosity, color);
-		_worker_thread = std::jthread([this](std::stop_token stoken) {
-			ProcessQueue(stoken);
-		});
 	}
 
-	~ConsoleLoggger() override {
-		_worker_thread.request_stop();
-		_semaphore.release();
-	}
+	~ConsoleLoggger() override = default;
 
 	void Log(std::string_view message, Color color, bool newLine) {
 		if (message.empty())
@@ -285,13 +281,23 @@ public:
 		if (message.empty())
 			return;
 
-		_queue.enqueue(LogEntry{
-			.message = std::string(message),
-			.severity = severity,
-			.timestamp = GetTimestamp(),
-			.location = location
+		[[maybe_unused]] auto guard = plg::make_scope_guard([&] {
+			if (s_sentry && s_breadcrumbs && severity != Severity::Unknown) {
+				std::unique_lock lock(_mutex);
+				if (_breadcrumbs.size() > s_breadcrumbs_max) _breadcrumbs.pop_front();
+				_breadcrumbs.emplace_back(std::string(message), severity, GetTimestamp(), location);
+			}
 		});
-		_semaphore.release();
+
+		if (severity == Severity::Unknown) {
+			WriteMessage(message, severity);
+			return;
+		} else if (severity < _min_severity) {
+			return;
+		}
+
+		auto output = FormatMessage(message, severity, location);
+		WriteMessage(output, severity);
 	}
 
 	static double GetTimestamp() {
@@ -312,6 +318,7 @@ public:
 
 	template<typename F>
 	void Foreach(const F& func) {
+		std::unique_lock lock(_mutex);
 		for (const auto& [message, severity, timestamp, location] : _breadcrumbs) {
 			std::string_view type = "default";
 			std::string_view category = severity == Severity::Trace ? "trace" : "log";
@@ -321,7 +328,7 @@ public:
 	}
 
 protected:
-	struct alignas(std::hardware_constructive_interference_size) LogEntry {
+	struct LogEntry {
 		std::string message;
 		Severity severity;
 		double timestamp;
@@ -343,27 +350,6 @@ protected:
 		/* Fatal   */ { LS_ERROR,   S2Colors::MAGENTA },
 	};
 
-	void Write(LogEntry& entry) {
-		const auto& [message, severity, timestamp, location] = entry;
-
-		[[maybe_unused]] auto guard = plg::make_scope_guard([&] {
-			if (s_sentry && s_breadcrumbs && severity != Severity::Unknown) {
-				if (_breadcrumbs.size() > s_breadcrumbs_max) _breadcrumbs.pop_front();
-				_breadcrumbs.push_back(std::move(entry));
-			}
-		});
-
-		if (severity == Severity::Unknown) {
-			WriteMessage(message, severity);
-			return;
-		} else if (severity < _min_severity) {
-			return;
-		}
-
-		auto output = FormatMessage(message, severity, location);
-		WriteMessage(output, severity);
-	}
-
 	void WriteMessage(std::string_view message, Severity severity) const {
 		const auto& [sev, color] = kLogParams[static_cast<size_t>(severity)];
 
@@ -378,17 +364,6 @@ protected:
 		if (message.back() != '\n') {
 			LoggingSystem_LogDirect(_channel, sev, "\n");
 		}
-	}
-
-	void ProcessQueue(std::stop_token stoken) {
-		LogEntry entry;
-		while (!stoken.stop_requested()) {
-			_semaphore.acquire(); // sleeps until a Log() wakes it
-			while (_queue.try_dequeue(entry)) // spurious wake from destructor: no-op
-				Write(entry);
-		}
-		while (_queue.try_dequeue(entry))
-			Write(entry);
 	}
 
 private:
@@ -453,18 +428,15 @@ private:
 private:
 	std::atomic<Severity> _min_severity{ Severity::Unknown };
 	LoggingChannelID_t _channel{ INVALID_LOGGING_CHANNEL_ID };
-	std::counting_semaphore<> _semaphore{ 0 };
-	daking::MPSC_queue<LogEntry> _queue;
 	std::deque<LogEntry> _breadcrumbs;
-	std::jthread _worker_thread;
+	std::mutex _mutex;
 };
 
 class FileLoggingListener final : public ILoggingListener {
 public:
-	static constexpr size_t kMaxBytes = 10 * 1024 * 1024;
+	static constexpr std::streamoff kMaxFileSize = 10 * 1024 * 1024;
 
-    static Result<std::unique_ptr<FileLoggingListener>>
-    Create(fs::path base, size_t max_bytes = kMaxBytes, bool auto_flush = true) {
+    static Result<std::unique_ptr<FileLoggingListener>> Create(fs::path base) {
     	std::error_code ec;
     	fs::create_directories(base.parent_path(), ec);
 
@@ -479,25 +451,16 @@ public:
             );
         }
 
-        return std::make_unique<FileLoggingListener>(std::move(file), std::move(path), std::move(base), max_bytes, auto_flush);
+        return std::make_unique<FileLoggingListener>(std::move(file), std::move(path), std::move(base));
     }
 
-    explicit FileLoggingListener(std::ofstream&& file, fs::path&& path, fs::path&& base, size_t max_bytes, bool auto_flush)
+    explicit FileLoggingListener(std::ofstream&& file, fs::path&& path, fs::path&& base)
         : _file(std::move(file))
         , _path(std::move(path))
-        , _base(std::move(base))
-        , _max_bytes(max_bytes)
-        , _auto_flush(auto_flush) {
-
-        _worker_thread = std::jthread([this](std::stop_token stoken) {
-            ProcessQueue(stoken);
-        });
+        , _base(std::move(base)) {
     }
 
-    ~FileLoggingListener() {
-        _worker_thread.request_stop();
-        _semaphore.release();
-    }
+    ~FileLoggingListener() = default;
 
     FileLoggingListener(const FileLoggingListener&) = delete;
     FileLoggingListener& operator=(const FileLoggingListener&) = delete;
@@ -508,21 +471,20 @@ public:
         if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0 || pMessage == nullptr || pMessage[0] == '\0')
             return;
 
-        _queue.enqueue(pMessage);
-        _semaphore.release();
-    }
-
-protected:
-    void Write(std::string_view message) {
     	if (ShouldRotate())
     		RotateLog();
 
-    	WriteMessage(message);
+    	WriteMessage(pMessage);
     }
 
+	void Flush() {
+		_file.flush();
+	}
+
+protected:
 	bool ShouldRotate() {
     	auto pos = _file.tellp();
-    	return pos >= static_cast<std::streamoff>(_max_bytes);
+    	return pos >= kMaxFileSize;
     }
 
 	void RotateLog() {
@@ -545,20 +507,6 @@ protected:
     	auto ms = duration_cast<milliseconds>(now - seconds);
 
     	std::print(_file, "[{:%F %T}.{:03d}] {}", seconds, static_cast<int>(ms.count()), message);
-
-    	if (_auto_flush)
-    		_file.flush();
-    }
-
-    void ProcessQueue(std::stop_token stoken) {
-        std::string entry;
-        while (!stoken.stop_requested()) {
-            _semaphore.acquire();
-            while (_queue.try_dequeue(entry))
-                Write(entry);
-        }
-        while (_queue.try_dequeue(entry))
-            Write(entry);
     }
 
 	// Helper: turn /logs/session.log → /logs/session-20260418_143022.log
@@ -580,11 +528,6 @@ private:
     std::ofstream _file;
     fs::path _path;
     fs::path _base;
-	const size_t _max_bytes{};
-    const bool _auto_flush{};
-    std::counting_semaphore<> _semaphore{ 0 };
-    daking::MPSC_queue<std::string> _queue;
-    std::jthread _worker_thread;
 };
 
 class TracyProfiler final : public IProfiler {
@@ -640,6 +583,8 @@ sentry_value_t SentryNativeOnCrash([[maybe_unused]] const sentry_ucontext_t* uct
 		sentry_value_set_by_key(crumb, "data", data);
 		sentry_add_breadcrumb(crumb);
 	});
+
+	if (s_listener) s_listener->Flush();
 
 	CMiniDumpComment comment(131072);
 	LoggingSystem_GetLogCapture(&comment, true);

@@ -79,11 +79,6 @@ set(DYNLIBUTILS_USE_ABI0 OFF CACHE INTERNAL "")
 add_subdirectory(external/dynlibutils)
 
 #
-# Queue
-#
-include_directories(external/mpsc_queue/include)
-
-#
 # Sentry
 #
 add_subdirectory(external/sentry)
@@ -129,8 +124,6 @@ endif()
 
 if(WIN32)
     set(S2_LINK_LIBRARIES ${S2_LINK_LIBRARIES} Dbghelp.lib)
-else()
-    set(S2_LINK_LIBRARIES ${S2_LINK_LIBRARIES} atomic)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE ${S2_LINK_LIBRARIES} ${CMAKE_DL_LIBS})
