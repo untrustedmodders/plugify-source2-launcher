@@ -29,7 +29,6 @@
 #include <glaze/toml.hpp>
 #include <reproc++/drain.hpp>
 #include <reproc++/reproc.hpp>
-#include <tracy/TracyC.h>
 
 #include <plugify/assembly.hpp>
 #include <plugify/extension.hpp>
@@ -48,6 +47,7 @@
 #include <icommandline.h>
 #include <tier0/logging.h>
 #include <tier0/minidump.h>
+#include <tier0/vprof.h>
 #include <engine/hoststate.h>
 #include <appframework/iappsystem.h>
 
@@ -530,38 +530,97 @@ private:
     fs::path _base;
 };
 
-class TracyProfiler final : public IProfiler {
+class VProfiler final : public IProfiler {
+	using VProf = VProfScopeHelper<0, false>;
 public:
-	TracyProfiler() = default;
+	VProfiler() = default;
 
 	ZoneHandle BeginZone(const ZoneInfo& info) override {
-		auto id = info.name.empty() ?
-			___tracy_alloc_srcloc(static_cast<uint32_t>(info.line), info.file.data(), info.file.size(), info.function.data(), info.function.size(), info.color) :
-			___tracy_alloc_srcloc_name(static_cast<uint32_t>(info.line), info.file.data(), info.file.size(), info.function.data(), info.function.size(), info.name.data(), info.name.size(), info.color);
-		return std::bit_cast<ZoneHandle>(___tracy_emit_zone_begin_alloc(id, 1));
+		{
+			std::shared_lock lock(_mutex);
+			auto it = _cache.find(info);
+			if (it != _cache.end()) {
+				const ZoneLocation& cached = it->second;
+				VProfExitScopeCB scope = VProf::EnterScopeInternal(cached.name.c_str(), cached.location);
+				return std::bit_cast<ZoneHandle>(scope);
+			}
+		}
+
+		std::unique_lock lock(_mutex);
+		auto [it, inserted] = _cache.try_emplace(info, info);
+		const ZoneLocation& cached = it->second;
+		VProfExitScopeCB scope = VProf::EnterScopeInternal(cached.name.c_str(), cached.location);
+		return std::bit_cast<ZoneHandle>(scope);
 	}
 
     void EndZone(ZoneHandle zone) override {
-        ___tracy_emit_zone_end(std::bit_cast<TracyCZoneCtx>(zone));
+        std::bit_cast<VProfExitScopeCB>(zone)();
     }
 
-    void MarkFrame(std::string_view name) override {
-	    ___tracy_emit_frame_mark(name.data());
-    }
+    void MarkFrame(std::string_view name) override {}
 
-    void SetThread(std::string_view name) override {
-        ___tracy_set_thread_name(name.data());
-    }
+    void SetThread(std::string_view name) override {}
 
-	std::string_view GetName() const override { return "Tracy"; }
+	std::string_view GetName() const override { return "VProf"; }
     bool IsActive() const override { return true; }
+
+private:
+    struct ZoneLocation {
+        std::string name;
+        std::string file;
+        std::string function;
+        CUtlSourceLocation location;
+
+		ZoneLocation(const ZoneInfo& info)
+            : name(info.name)
+            , file(info.file)
+            , function(info.function)
+            , location(file.c_str(), info.line, function.c_str())
+        {}
+
+		//bool operator==(const ZoneLocation&) const = default;
+		//auto operator<=>(const ZoneLocation&) const = default;
+    };
+
+	struct ZoneKey {
+        std::string name;
+		std::string function;
+		std::string file;
+		size_t line;
+		uint32_t color;
+
+        ZoneKey(const ZoneInfo& info)
+            : name(info.name)
+            , function(info.function)
+            , file(info.file)
+            , line(info.line)
+            , color(info.color)
+        {}
+
+		bool operator==(const ZoneKey&) const = default;
+		auto operator<=>(const ZoneKey&) const = default;
+	};
+
+	struct ZoneHash {
+		using is_transparent = void;
+
+		size_t operator()(const ZoneKey& k) const {
+			return plg::hash_combine_all(k.name, k.function, k.file, k.line, k.color);
+		}
+		size_t operator()(const ZoneInfo& i) const {
+			return plg::hash_combine_all(i.name, i.function, i.file, i.line, i.color);
+		}
+	};
+
+    std::unordered_map<ZoneKey, ZoneLocation, ZoneHash, std::equal_to<>> _cache;
+	std::shared_mutex _mutex;
 };
 
 enum class PlugifyState { Wait, Load, Unload, Reload, Quit };
 
 std::shared_ptr<Plugify> s_plugify;
 std::shared_ptr<ConsoleLoggger> s_logger;
-std::shared_ptr<TracyProfiler> s_profiler;
+std::shared_ptr<VProfiler> s_profiler;
 std::unique_ptr<FileLoggingListener> s_listener;
 PlugifyState s_state;
 
@@ -3559,7 +3618,7 @@ Result<void> Initialize(std::span<char*> args) {
 	s_logger = std::make_shared<ConsoleLoggger>("plugify");
 	s_logger->SetLogLevel(severity);
 
-	if (profiler) s_profiler = std::make_shared<TracyProfiler>();
+	if (profiler) s_profiler = std::make_shared<VProfiler>();
 
 	return {};
 }

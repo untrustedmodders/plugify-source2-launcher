@@ -110,13 +110,12 @@ endif()
 include(FetchCLI)
 include(FetchReproc)
 include(FetchGit)
-include(FetchTracy)
 find_package(Threads REQUIRED)
 
 include(SetIcon)
 set_icon(${PROJECT_NAME} "icon.ico")
 
-set(S2_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ cpp-memory_utils CLI11 git Tracy::TracyClient sentry::sentry sourcesdk::sourcesdk)
+set(S2_LINK_LIBRARIES plugify::plugify glaze::glaze Threads::Threads reproc++ cpp-memory_utils CLI11 git sentry::sentry sourcesdk::sourcesdk)
 
 if(NOT COMPILER_SUPPORTS_FORMAT)
     #set(S2_LINK_LIBRARIES ${S2_LINK_LIBRARIES} fmt::fmt-header-only)
@@ -131,7 +130,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ${S2_LINK_LIBRARIES} ${CMAKE_DL_LI
 if(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX=1)
 endif()
-target_compile_definitions(${PROJECT_NAME} PRIVATE TRACY_ENABLE)
 
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX)
