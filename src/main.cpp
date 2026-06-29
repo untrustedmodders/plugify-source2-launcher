@@ -535,47 +535,47 @@ class VProfiler final : public IProfiler {
 public:
 	VProfiler() = default;
 
-	ZoneHandle BeginZone(const ZoneInfo& info) override {
+	ZoneHandle BeginZone(std::string_view name, const Location& location) override {
+		ZoneInfo info{ name, location };
+
 		{
 			std::shared_lock lock(_mutex);
 			auto it = _cache.find(info);
 			if (it != _cache.end()) {
-				const ZoneLocation& cached = it->second;
-				VProfExitScopeCB scope = VProf::EnterScopeInternal(cached.name.c_str(), cached.location);
-				return std::bit_cast<ZoneHandle>(scope);
+				return Zone(it->second);
 			}
 		}
 
 		std::unique_lock lock(_mutex);
 		auto [it, inserted] = _cache.try_emplace(info, info);
-		const ZoneLocation& cached = it->second;
-		VProfExitScopeCB scope = VProf::EnterScopeInternal(cached.name.c_str(), cached.location);
-		return std::bit_cast<ZoneHandle>(scope);
+		return Zone(it->second);
 	}
 
     void EndZone(ZoneHandle zone) override {
         std::bit_cast<VProfExitScopeCB>(zone)();
     }
 
-    void MarkFrame(std::string_view name) override {}
-
-    void SetThread(std::string_view name) override {}
-
-	std::string_view GetName() const override { return "VProf"; }
-    bool IsActive() const override { return true; }
+	void MarkFrame(std::string_view name) override {}
 
 private:
+	struct ZoneInfo {
+		const std::string_view& name;
+		const Location& location;
+	};
+
     struct ZoneLocation {
         std::string name;
         std::string file;
         std::string function;
+        std::string module;
         CUtlSourceLocation location;
 
 		ZoneLocation(const ZoneInfo& info)
             : name(info.name)
-            , file(info.file)
-            , function(info.function)
-            , location(file.c_str(), info.line, function.c_str())
+            , file(info.location.file_name())
+            , function(info.location.function_name())
+            , module(info.location.module_name())
+            , location(file.c_str(), info.location.line(), function.c_str())
         {}
 
 		//bool operator==(const ZoneLocation&) const = default;
@@ -584,17 +584,19 @@ private:
 
 	struct ZoneKey {
         std::string name;
-		std::string function;
 		std::string file;
-		size_t line;
-		uint32_t color;
+		std::string function;
+		std::string module;
+		std::size_t line;
+		std::size_t column;
 
         ZoneKey(const ZoneInfo& info)
             : name(info.name)
-            , function(info.function)
-            , file(info.file)
-            , line(info.line)
-            , color(info.color)
+            , file(info.location.file_name())
+            , function(info.location.function_name())
+            , module(info.location.module_name())
+            , line(info.location.line())
+            , column(info.location.column())
         {}
 
 		bool operator==(const ZoneKey&) const = default;
@@ -605,12 +607,18 @@ private:
 		using is_transparent = void;
 
 		size_t operator()(const ZoneKey& k) const {
-			return plg::hash_combine_all(k.name, k.function, k.file, k.line, k.color);
+			return plg::hash_combine_all(k.name, k.file, k.function, k.module, k.line, k.column);
 		}
 		size_t operator()(const ZoneInfo& i) const {
-			return plg::hash_combine_all(i.name, i.function, i.file, i.line, i.color);
+			return plg::hash_combine_all(i.name, i.location.file_name(), i.location.function_name(), i.location.module_name(), i.location.line(), i.location.column());
 		}
 	};
+
+	static ZoneHandle Zone(const ZoneLocation& cached) {
+		VProfBudgetGroupCallSite budgetGroup(cached.module.c_str(), 0);
+		VProfExitScopeCB scope = VProf::EnterScopeInternalBudgetFlags(cached.name.c_str(), budgetGroup, cached.location);
+		return std::bit_cast<ZoneHandle>(scope);
+	}
 
     std::unordered_map<ZoneKey, ZoneLocation, ZoneHash, std::equal_to<>> _cache;
 	std::shared_mutex _mutex;
