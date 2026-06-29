@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.7](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.6...v2.4.7) (2026-06-29)
+
+
+### Bug Fixes
+
+* replace tracy by vprof ([06143a9](https://github.com/untrustedmodders/plugify-source2-launcher/commit/06143a9d367f107d632d0e051deddbe9b56b8f2c))
+* update profiler with budget groups ([7b7ea5f](https://github.com/untrustedmodders/plugify-source2-launcher/commit/7b7ea5fad6e53cf979f04e5bd027aa8ff4435dc9))
+
 ## [2.4.6](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.5...v2.4.6) (2026-06-16)
 
 
