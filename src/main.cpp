@@ -436,46 +436,46 @@ class FileLoggingListener final : public ILoggingListener {
 public:
 	static constexpr std::streamoff kMaxFileSize = 10 * 1024 * 1024;
 
-    static Result<std::unique_ptr<FileLoggingListener>> Create(fs::path base) {
-    	std::error_code ec;
-    	fs::create_directories(base.parent_path(), ec);
+	static Result<std::unique_ptr<FileLoggingListener>> Create(fs::path base) {
+		std::error_code ec;
+		fs::create_directories(base.parent_path(), ec);
 
-    	auto path = TimestampedPath(base);
+		auto path = TimestampedPath(base);
 		errno = 0;
-        std::ofstream file(path, std::ios::app);
-        if (!file) {
-            return MakeError(
-                "Failed to open log file: {} - {}",
-                plg::as_string(path),
-                std::strerror(errno)
-            );
-        }
+		std::ofstream file(path, std::ios::app);
+		if (!file) {
+			return MakeError(
+				"Failed to open log file: {} - {}",
+				plg::as_string(path),
+				std::strerror(errno)
+			);
+		}
 
-        return std::make_unique<FileLoggingListener>(std::move(file), std::move(path), std::move(base));
-    }
+		return std::make_unique<FileLoggingListener>(std::move(file), std::move(path), std::move(base));
+	}
 
-    explicit FileLoggingListener(std::ofstream&& file, fs::path&& path, fs::path&& base)
-        : _file(std::move(file))
-        , _path(std::move(path))
-        , _base(std::move(base)) {
-    }
+	explicit FileLoggingListener(std::ofstream&& file, fs::path&& path, fs::path&& base)
+		: _file(std::move(file))
+		, _path(std::move(path))
+		, _base(std::move(base)) {
+	}
 
-    ~FileLoggingListener() = default;
+	~FileLoggingListener() = default;
 
-    FileLoggingListener(const FileLoggingListener&) = delete;
-    FileLoggingListener& operator=(const FileLoggingListener&) = delete;
-    FileLoggingListener(FileLoggingListener&&) = delete;
-    FileLoggingListener& operator=(FileLoggingListener&&) = delete;
+	FileLoggingListener(const FileLoggingListener&) = delete;
+	FileLoggingListener& operator=(const FileLoggingListener&) = delete;
+	FileLoggingListener(FileLoggingListener&&) = delete;
+	FileLoggingListener& operator=(FileLoggingListener&&) = delete;
 
-    void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
-        if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0 || pMessage == nullptr || pMessage[0] == '\0')
-            return;
+	void Log(const LoggingContext_t* pContext, const tchar* pMessage) override {
+		if (!pContext || (pContext->m_Flags & LCF_CONSOLE_ONLY) != 0 || pMessage == nullptr || pMessage[0] == '\0')
+			return;
 
-    	if (ShouldRotate())
-    		RotateLog();
+		if (ShouldRotate())
+			RotateLog();
 
-    	WriteMessage(pMessage);
-    }
+		WriteMessage(pMessage);
+	}
 
 	void Flush() {
 		_file.flush();
@@ -483,51 +483,51 @@ public:
 
 protected:
 	bool ShouldRotate() {
-    	auto pos = _file.tellp();
-    	return pos >= kMaxFileSize;
-    }
+		auto pos = _file.tellp();
+		return pos >= kMaxFileSize;
+	}
 
 	void RotateLog() {
-    	_file.close();
-    	_path = TimestampedPath(_base);
-    	_file.open(_path, std::ios::trunc);
+		_file.close();
+		_path = TimestampedPath(_base);
+		_file.open(_path, std::ios::trunc);
 
-    	if (!_file)
-    		// todo: log error
-    		return;
-    }
+		if (!_file)
+			// todo: log error
+			return;
+	}
 
 	void WriteMessage(std::string_view message) {
-    	if (!_file)
-    		return;
+		if (!_file)
+			return;
 
-    	using namespace std::chrono;
-    	auto now = system_clock::now();
-    	auto seconds = floor<std::chrono::seconds>(now);
-    	auto ms = duration_cast<milliseconds>(now - seconds);
+		using namespace std::chrono;
+		auto now = system_clock::now();
+		auto seconds = floor<std::chrono::seconds>(now);
+		auto ms = duration_cast<milliseconds>(now - seconds);
 
-    	std::print(_file, "[{:%F %T}.{:03d}] {}", seconds, static_cast<int>(ms.count()), message);
-    }
+		std::print(_file, "[{:%F %T}.{:03d}] {}", seconds, static_cast<int>(ms.count()), message);
+	}
 
 	// Helper: turn /logs/session.log → /logs/session-20260418_143022.log
 	static fs::path TimestampedPath(const fs::path& base) {
-    	using namespace std::chrono;
-    	auto now = system_clock::now();
-    	auto seconds = floor<std::chrono::seconds>(now);
+		using namespace std::chrono;
+		auto now = system_clock::now();
+		auto seconds = floor<std::chrono::seconds>(now);
 
-    	return base.parent_path()
+		return base.parent_path()
 		   / std::format(
 			   "{}-{:%Y%m%d_%H%M%S}{}",
 			   plg::as_string(base.stem()),
 			   utc_clock::from_sys(seconds),
 			   plg::as_string(base.extension())
 		   );
-    }
+	}
 
 private:
-    std::ofstream _file;
-    fs::path _path;
-    fs::path _base;
+	std::ofstream _file;
+	fs::path _path;
+	fs::path _base;
 };
 
 class VProfiler final : public IProfiler {
@@ -551,9 +551,9 @@ public:
 		return Zone(it->second);
 	}
 
-    void EndZone(ZoneHandle zone) override {
-        std::bit_cast<VProfExitScopeCB>(zone)();
-    }
+	void EndZone(ZoneHandle zone) override {
+		std::bit_cast<VProfExitScopeCB>(zone)();
+	}
 
 	void MarkFrame(std::string_view name) override {}
 
@@ -563,41 +563,41 @@ private:
 		const Location& location;
 	};
 
-    struct ZoneLocation {
-        std::string name;
-        std::string file;
-        std::string function;
-        std::string module;
-        CUtlSourceLocation location;
+	struct ZoneLocation {
+		std::string name;
+		std::string file;
+		std::string function;
+		std::string module;
+		CUtlSourceLocation location;
 
 		ZoneLocation(const ZoneInfo& info)
-            : name(info.name)
-            , file(info.location.file_name())
-            , function(info.location.function_name())
-            , module(info.location.module_name())
-            , location(file.c_str(), info.location.line(), function.c_str())
-        {}
+			: name(info.name)
+			, file(info.location.file_name())
+			, function(info.location.function_name())
+			, module(info.location.module_name())
+			, location(file.c_str(), info.location.line(), function.c_str())
+		{}
 
 		//bool operator==(const ZoneLocation&) const = default;
 		//auto operator<=>(const ZoneLocation&) const = default;
-    };
+	};
 
 	struct ZoneKey {
-        std::string name;
+		std::string name;
 		std::string file;
 		std::string function;
 		std::string module;
 		std::size_t line;
 		std::size_t column;
 
-        ZoneKey(const ZoneInfo& info)
-            : name(info.name)
-            , file(info.location.file_name())
-            , function(info.location.function_name())
-            , module(info.location.module_name())
-            , line(info.location.line())
-            , column(info.location.column())
-        {}
+		ZoneKey(const ZoneInfo& info)
+			: name(info.name)
+			, file(info.location.file_name())
+			, function(info.location.function_name())
+			, module(info.location.module_name())
+			, line(info.location.line())
+			, column(info.location.column())
+		{}
 
 		bool operator==(const ZoneKey&) const = default;
 		auto operator<=>(const ZoneKey&) const = default;
@@ -620,7 +620,7 @@ private:
 		return std::bit_cast<ZoneHandle>(scope);
 	}
 
-    std::unordered_map<ZoneKey, ZoneLocation, ZoneHash, std::equal_to<>> _cache;
+	std::unordered_map<ZoneKey, ZoneLocation, ZoneHash, std::equal_to<>> _cache;
 	std::shared_mutex _mutex;
 };
 
