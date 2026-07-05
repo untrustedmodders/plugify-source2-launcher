@@ -547,7 +547,7 @@ public:
 		}
 
 		std::unique_lock lock(_mutex);
-		auto [it, inserted] = _cache.try_emplace(info, info);
+		auto [it, inserted] = _cache.emplace(info, info);
 		return Zone(it->second);
 	}
 
