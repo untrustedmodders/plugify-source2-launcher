@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.8...v2.5.0) (2026-08-16)
+
+
+### Features
+
+* update for new plugify ([f02f83d](https://github.com/untrustedmodders/plugify-source2-launcher/commit/f02f83d61d1b71a7d220fc24c13597fbf5d945f5))
+
 ## [2.4.8](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.7...v2.4.8) (2026-07-09)
 
 
