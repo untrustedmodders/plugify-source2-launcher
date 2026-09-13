@@ -631,6 +631,7 @@ std::shared_ptr<ConsoleLoggger> s_logger;
 std::shared_ptr<VProfiler> s_profiler;
 std::unique_ptr<FileLoggingListener> s_listener;
 PlugifyState s_state;
+bool s_logging;
 
 sentry_value_t SentryNativeOnCrash([[maybe_unused]] const sentry_ucontext_t* uctx, sentry_value_t event, [[maybe_unused]] void* userdata) {
 	if (s_logger) s_logger->Foreach([](std::string_view type, std::string_view category, std::string_view level, std::string_view message, double timestamp, const Location& location) {
@@ -3408,6 +3409,7 @@ public:
 		if (s_listener) {
 			LoggingSystem_PushLoggingState(false, false);
 			LoggingSystem_RegisterLoggingListener(s_listener.get());
+			s_logging = true;
 		}
 
 		// Notify about sentry
@@ -3583,82 +3585,116 @@ fs::path GamePath() {
 	return path;
 }
 
-Result<void> Initialize(std::span<char*> args) {
-	auto severity = HasSeverity(args, "--verbosity=");
-	bool profiler = HasParameter(args, "--profiler");
-	bool dedicated = HasParameter(args, "-dedicated");
-	bool insecure = HasParameter(args, "-insecure");
+class AppInitializer {
+public:
+	AppInitializer() = default;
+	~AppInitializer() { Shutdown(); }
 
-	if (!dedicated && !insecure) {
-		return MakeError("Client mode can only be run with -insecure");
-	}
+	AppInitializer(const AppInitializer&) = delete;
+	AppInitializer(AppInitializer&&) = delete;
+	AppInitializer& operator=(const AppInitializer&) = delete;
+	AppInitializer& operator=(AppInitializer&&) = delete;
 
-	auto root_path = RootPath();
-	auto game_path = GamePath();
-	
-	if (!std::is_debugger_present()) {
-		auto result = SentryInitializer::Initialize(root_path, PLUGIFY_PATH_LITERAL("sentry.jsonc"));
-		if (!result) {
-			return MakeError(std::move(result.error()));
+	Result<void> Initialize(std::span<char*> args) {
+		if (auto result = Setup(args); !result) {
+			Shutdown();
+			return result;
 		}
-		s_sentry = *result;
+
+		return {};
 	}
 
-	auto engine_path = root_path / ENGINE_PATH;
-	auto module_path = game_path / (dedicated ? SERVER_PATH : CLIENT_PATH);
+private:
+	Result<void> Setup(std::span<char*> args) {
+		if (_initialized) {
+			return {};
+		}
 
-	s_engine = std::make_unique<DynLibUtils::CModule>();
-	s_engine->LoadFromPath(plg::as_string(engine_path), engine_flags);
-	if (!s_engine->IsValid()) {
-		return MakeError("{} - {}", s_engine->GetLastError(), plg::as_string(engine_path));
+		auto severity = HasSeverity(args, "--verbosity=");
+		bool profiler = HasParameter(args, "--profiler");
+		bool dedicated = HasParameter(args, "-dedicated");
+		bool insecure = HasParameter(args, "-insecure");
+
+		if (!dedicated && !insecure) {
+			return MakeError("Client mode can only be run with -insecure");
+		}
+
+		auto root_path = RootPath();
+		auto game_path = GamePath();
+
+		if (!std::is_debugger_present()) {
+			auto result = SentryInitializer::Initialize(root_path, PLUGIFY_PATH_LITERAL("sentry.jsonc"));
+			if (!result) {
+				return MakeError(std::move(result.error()));
+			}
+			s_sentry = *result;
+		}
+
+		auto engine_path = root_path / ENGINE_PATH;
+		auto module_path = game_path / (dedicated ? SERVER_PATH : CLIENT_PATH);
+
+		s_engine = std::make_unique<DynLibUtils::CModule>();
+		s_engine->LoadFromPath(plg::as_string(engine_path), engine_flags);
+		if (!s_engine->IsValid()) {
+			return MakeError("{} - {}", s_engine->GetLastError(), plg::as_string(engine_path));
+		}
+
+		s_module = std::make_unique<DynLibUtils::CModule>();
+		s_module->LoadFromPath(plg::as_string(module_path), module_flags);
+		if (!s_module->IsValid()) {
+			return MakeError("{} - {}", s_module->GetLastError(), plg::as_string(module_path));
+		}
+
+		auto table = s_engine->GetVirtualTableByName("CMaterialSystem2AppSystemDict");
+		DynLibUtils::CVirtualTable vtable(table);
+		s_OnAppSystemLoaded.Hook(vtable, &OnAppSystemLoaded);
+
+		s_logger = std::make_shared<ConsoleLoggger>("plugify");
+		s_logger->SetLogLevel(severity);
+
+		if (profiler) s_profiler = std::make_shared<VProfiler>();
+
+		_initialized = true;
+		return {};
 	}
 
-	s_module = std::make_unique<DynLibUtils::CModule>();
-	s_module->LoadFromPath(plg::as_string(module_path), module_flags);
-	if (!s_module->IsValid()) {
-		return MakeError("{} - {}", s_module->GetLastError(), plg::as_string(module_path));
+	void Shutdown() {
+		s_plugify.reset();
+
+		if (s_logging) {
+			LoggingSystem_PopLoggingState();
+			s_logging = false;
+		}
+
+		if (s_sentry) {
+			SentryInitializer::Shutdown();
+			s_sentry = false;
+		}
+
+		s_ServerPostSimulate.Unhook();
+		s_ClientPostSimulate.Unhook();
+		s_OnAppSystemLoaded.Unhook();
+		s_HostStateMgrQuit.Unhook();
+
+		s_listener.reset();
+		s_profiler.reset();
+		s_logger.reset();
+		s_module.reset();
+		s_engine.reset();
+
+		s_CreateInterface = nullptr;
+		_initialized = false;
 	}
 
-	auto table = s_engine->GetVirtualTableByName("CMaterialSystem2AppSystemDict");
-	DynLibUtils::CVirtualTable vtable(table);
-	s_OnAppSystemLoaded.Hook(vtable, &OnAppSystemLoaded);
-
-	s_logger = std::make_shared<ConsoleLoggger>("plugify");
-	s_logger->SetLogLevel(severity);
-
-	if (profiler) s_profiler = std::make_shared<VProfiler>();
-
-	return {};
-}
-
-void Shutdown() {
-	if (s_listener) {
-		LoggingSystem_PopLoggingState();
-	}
-
-	if (s_sentry) {
-		SentryInitializer::Shutdown();
-	}
-
-	s_ServerPostSimulate.Unhook();
-	s_ClientPostSimulate.Unhook();
-	s_OnAppSystemLoaded.Unhook();
-	s_HostStateMgrQuit.Unhook();
-
-	s_listener.reset();
-	s_profiler.reset();
-	s_logger.reset();
-	s_module.reset();
-	s_engine.reset();
-
-	s_CreateInterface = nullptr;
-}
+	bool _initialized{false};
+};
 
 #if S2_GAME_LAUNCHER
 int main(int argc, char* argv[]) {
+	AppInitializer app;
+
 	std::span args(argv, argc);
-	auto result = Initialize(args);
-	if (!result) {
+	if (auto result = app.Initialize(args); !result) {
 		std::println(std::cerr, "Error: {}", result.error());
 		return 1;
 	}
@@ -3666,18 +3702,13 @@ int main(int argc, char* argv[]) {
 	auto Source2Main = s_engine->GetFunctionByName("Source2Main").RCast<Source2MainFn>();
 	if (!Source2Main) {
 		std::println(std::cerr, "Error: Failed to find Source2Main function in '{}'", s_engine->GetPath());
-		Shutdown();
 		return 1;
 	}
 
 	auto parent_path = RootPath().generic_string();
 	auto command_line = argc > 1 ? plg::join(std::span(argv + 1, argc - 1), " ") : "";
 
-	int res = Source2Main(nullptr, nullptr, command_line.c_str(), 0, parent_path.c_str(), S2_GAME_NAME);
-
-	Shutdown();
-
-	return res;
+	return Source2Main(nullptr, nullptr, command_line.c_str(), 0, parent_path.c_str(), S2_GAME_NAME);
 }
 #else // !S2_GAME_LAUNCHER
 DLL_EXPORT void* CreateInterface(const char* name, int* rc) {
@@ -3687,10 +3718,11 @@ DLL_EXPORT void* CreateInterface(const char* name, int* rc) {
 			return nullptr;
 		}
 
+		static AppInitializer app;
+
 		ICommandLine* command = CommandLine();
 		std::span args(const_cast<char**>(command->GetParms()), command->ParmCount());
-		auto result = Initialize(args);
-		if (!result) {
+		if (auto result = app.Initialize(args); !result) {
 			std::println(std::cerr, "Error: {}", result.error());
 			return nullptr;
 		}
@@ -3698,7 +3730,6 @@ DLL_EXPORT void* CreateInterface(const char* name, int* rc) {
 		s_CreateInterface = s_module->GetFunctionByName("CreateInterface").RCast<CreateInterfaceFn>();
 		if (!s_CreateInterface) {
 			std::println(std::cerr, "Error: Failed to find CreateInterface function in '{}'", s_module->GetPath());
-			Shutdown();
 			return nullptr;
 		}
 	}
