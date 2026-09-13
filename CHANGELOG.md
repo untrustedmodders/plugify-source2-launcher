@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.0...v2.5.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* update plugify and add static cleanup for non launcher mode ([edc1469](https://github.com/untrustedmodders/plugify-source2-launcher/commit/edc1469207b7f99735c88857a7b8f6bd45d24afc))
+
 ## [2.5.0](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.4.8...v2.5.0) (2026-08-16)
 
 
