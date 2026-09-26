@@ -3299,6 +3299,7 @@ private:
 		SetDefaultMiniDumpHandler([](MiniDumpHandlerData_t* data) {
 			sentry_ucontext_t ctx{ .exception_ptrs = *data->pExceptionInfo };
 			sentry_handle_exception(&ctx);
+			return 3;
 		}, true);
 		plg::print("{}: Crash handler registered", Colorize("Info", Colors::GREEN));
 #endif
