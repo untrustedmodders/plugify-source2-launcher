@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.3](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.2...v2.5.3) (2026-09-26)
+
+
+### Bug Fixes
+
+* windows ([09cfdb8](https://github.com/untrustedmodders/plugify-source2-launcher/commit/09cfdb82d972ab0ff5cf8cff1eb57bd0c0d5cf8c))
+
 ## [2.5.2](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.1...v2.5.2) (2026-09-26)
 
 
