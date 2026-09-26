@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.2](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.1...v2.5.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* update plugify to v3.1.0 and sourcesdk ([871c21d](https://github.com/untrustedmodders/plugify-source2-launcher/commit/871c21d9c75ca6deb834e4f54ff1343fa5b5063d))
+
 ## [2.5.1](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.0...v2.5.1) (2026-09-13)
 
 
