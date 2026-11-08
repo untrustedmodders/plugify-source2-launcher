@@ -695,6 +695,20 @@ namespace plg {
 	PLUGIFY_FORCE_INLINE void print(std::format_string<Args...> fmt, Args&&... args) {
 		s_logger->Log(std::format(fmt, std::forward<Args>(args)...), true);
 	}
+
+	template <typename T1, typename T2>
+	bool case_insensitive_equals(const T1& lhs, const T2& rhs) {
+		return lhs.size() == rhs.size() && std::ranges::equal(lhs, rhs, [](unsigned char a, unsigned char b) {
+		   return std::tolower(a) == std::tolower(b);
+		});
+	}
+
+	template <typename T1, typename T2>
+	bool case_insensitive_contains(const T1& lhs, const T2& rhs) {
+		return std::ranges::search(lhs, rhs, [](unsigned char a, unsigned char b) {
+		   return std::tolower(a) == std::tolower(b);
+		}).begin() != lhs.end();
+	}
 }
 
 namespace {
@@ -922,33 +936,24 @@ namespace {
 			return false;
 		}
 
-		if (filter.states) {
-			auto state = ext->GetState();
-			if (std::find(filter.states->begin(), filter.states->end(), state)
-			    == filter.states->end()) {
+		if (filter.states.has_value()) {
+			if (!std::ranges::contains(*filter.states, ext->GetState())) {
 				return false;
 			}
 		}
 
-		if (filter.languages) {
-			const auto& lang = ext->GetLanguage();
-			if (std::find(filter.languages->begin(), filter.languages->end(), lang)
-			    == filter.languages->end()) {
+		if (filter.languages.has_value()) {
+			if (!std::ranges::contains(*filter.languages, ext->GetLanguage())) {
 				return false;
 			}
 		}
 
 		if (filter.searchQuery) {
-			std::string query = *filter.searchQuery;
-			std::transform(query.begin(), query.end(), query.begin(), ::tolower);
+			const std::string& query = *filter.searchQuery;
+			const std::string& name = ext->GetName();
+			const std::string& desc = ext->GetDescription();
 
-			std::string name = ext->GetName();
-			std::transform(name.begin(), name.end(), name.begin(), ::tolower);
-
-			std::string desc = ext->GetDescription();
-			std::transform(desc.begin(), desc.end(), desc.begin(), ::tolower);
-
-			if (name.find(query) == std::string::npos && desc.find(query) == std::string::npos) {
+			if (!plg::case_insensitive_contains(name, query) && !plg::case_insensitive_contains(desc, query)) {
 				return false;
 			}
 		}
@@ -1191,80 +1196,49 @@ namespace {
 		return report;
 	}
 
-	// Helper function to parse comma-separated values
-	std::vector<std::string> ParseCsv(const std::string& str) {
-		std::vector<std::string> result;
-		std::stringstream ss(str);
-		std::string item;
-		while (std::getline(ss, item, ',')) {
-			// Trim whitespace
-			item.erase(0, item.find_first_not_of(" \t"));
-			item.erase(item.find_last_not_of(" \t") + 1);
-			if (!item.empty()) {
-				result.push_back(item);
-			}
-		}
-		return result;
-	};
-
 	// Helper to parse sort option
-	SortBy ParseSortBy(std::string str) {
-		std::transform(str.begin(), str.end(), str.begin(), ::tolower);
-
-		if (str == "name") {
-			return SortBy::Name;
-		}
-		if (str == "version") {
-			return SortBy::Version;
-		}
-		if (str == "state") {
-			return SortBy::State;
-		}
-		if (str == "language") {
-			return SortBy::Language;
-		}
-		if (str == "loadtime") {
-			return SortBy::LoadTime;
+	SortBy ParseSortBy(std::string_view str) {
+		for (const auto& [sortby, name] : plg::entries_v<SortBy>) {
+			if (plg::case_insensitive_equals(str, name)) {
+				return sortby;
+			}
 		}
 
 		return SortBy::Name;
 	};
 
-	// Helper to parse extension state
-	ExtensionState ParseExtensionState(std::string str) {
-		std::transform(str.begin(), str.end(), str.begin(), ::tolower);
-
-		if (str == "loaded") {
-			return ExtensionState::Loaded;
-		}
-		if (str == "started") {
-			return ExtensionState::Started;
-		}
-		if (str == "failed") {
-			return ExtensionState::Failed;
-		}
-		if (str == "disabled") {
-			return ExtensionState::Disabled;
-		}
-		if (str == "corrupted") {
-			return ExtensionState::Corrupted;
-		}
-		if (str == "unresolved") {
-			return ExtensionState::Unresolved;
+	// Every state by its own name: the enum is the list, so nothing here needs
+	// touching when one is added, and all of them can be filtered on - 'running'
+	// included, which the six hand-written names left out.
+	ExtensionState ParseExtensionState(std::string_view str) {
+		for (const auto& [state, name] : plg::entries_v<ExtensionState>) {
+			if (plg::case_insensitive_equals(str, name)) {
+				return state;
+			}
 		}
 
 		return ExtensionState::Unknown;
 	};
 
-	// Helper to parse state filter
-	std::vector<ExtensionState> ParseStates(const std::vector<std::string>& strs) {
+	// Nothing recognized means no filter at all. An empty but present list is a
+	// filter that matches nothing, which hid every row instead of saying why.
+	std::optional<std::vector<ExtensionState>> ParseStates(const std::vector<std::string>& strs) {
 		std::vector<ExtensionState> states;
 		states.reserve(strs.size());
 		for (const auto& str : strs) {
 			auto state = ParseExtensionState(str);
-			if (state != ExtensionState::Unknown) {
-				states.push_back(state);
+			if (state == ExtensionState::Unknown) {
+				plg::print(
+					"{}: no state is called '{}', ignoring it.",
+					Colorize("Warning", Colors::YELLOW),
+					str
+				);
+				continue;
 			}
+			states.push_back(state);
+		}
+		if (states.empty()) {
+			return std::nullopt;
 		}
 		return states;
 	};
@@ -1381,9 +1355,6 @@ namespace {
 			auto state = plugin->GetState();
 			auto stateStr = plg::enum_to_string(state);
 			auto [symbol, color] = GetStateInfo(state);
-			const auto& name = !plugin->GetName().empty()
-			                       ? plugin->GetName()
-			                       : plg::as_string(plugin->GetLocation().filename());
 
 			// Get load time if available
 			std::string loadTime = "N/A";
@@ -1398,7 +1369,7 @@ namespace {
 			plg::print(
 			    "{:<3} {:<25} {:<15} {} {:<11} {:<8} {:<12}",
 			    index++,
-			    Truncate(name, 24),
+			    Truncate(plugin->GetName(), 24),
 			    plugin->GetVersionString(),
 			    Colorize(symbol, color),
 			    Truncate(std::string(stateStr), 10),
@@ -2193,20 +2164,13 @@ namespace {
 		auto allExtensions = manager.GetExtensions();
 
 		std::vector<const Extension*> matches;
-		std::string lowerQuery(query);
-		std::transform(lowerQuery.begin(), lowerQuery.end(), lowerQuery.begin(), ::tolower);
 
 		for (const auto& ext : allExtensions) {
-			std::string name = ext->GetName();
-			std::string desc = ext->GetDescription();
-			std::string author = ext->GetAuthor();
+			const std::string& name = ext->GetName();
+			const std::string& desc = ext->GetDescription();
+			const std::string& author = ext->GetAuthor();
 
-			std::transform(name.begin(), name.end(), name.begin(), ::tolower);
-			std::transform(desc.begin(), desc.end(), desc.begin(), ::tolower);
-			std::transform(author.begin(), author.end(), author.begin(), ::tolower);
-
-			if (name.find(lowerQuery) != std::string::npos || desc.find(lowerQuery) != std::string::npos
-			    || author.find(lowerQuery) != std::string::npos) {
+			if (plg::case_insensitive_contains(name, query) || plg::case_insensitive_contains(desc, query) || plg::case_insensitive_contains(author, query)) {
 				matches.push_back(ext);
 			}
 		}
@@ -2394,7 +2358,7 @@ namespace {
 
 	// Helper to parse severity option
 	Severity ParseSeverity(std::string str) {
-		std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+		std::ranges::transform(str, str.begin(), ::tolower);
 
 		if (str == "trace") {
 			return Severity::Trace;
