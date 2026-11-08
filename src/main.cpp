@@ -1196,6 +1196,22 @@ namespace {
 		return report;
 	}
 
+	// Helper function to parse comma-separated values
+	std::vector<std::string> ParseCsv(const std::string& str) {
+		std::vector<std::string> result;
+		std::stringstream ss(str);
+		std::string item;
+		while (std::getline(ss, item, ',')) {
+			// Trim whitespace
+			item.erase(0, item.find_first_not_of(" \t"));
+			item.erase(item.find_last_not_of(" \t") + 1);
+			if (!item.empty()) {
+				result.push_back(item);
+			}
+		}
+		return result;
+	};
+
 	// Helper to parse sort option
 	SortBy ParseSortBy(std::string_view str) {
 		for (const auto& [sortby, name] : plg::entries_v<SortBy>) {
