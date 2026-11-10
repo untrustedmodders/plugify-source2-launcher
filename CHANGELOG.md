@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.5.5](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.4...v2.5.5) (2026-11-10)
+
+
+### Bug Fixes
+
+* add missing code ([c64c34d](https://github.com/untrustedmodders/plugify-source2-launcher/commit/c64c34d320d505258d08be82471d59ac7db087a4))
+* remove tolower approach for lookup ([db20275](https://github.com/untrustedmodders/plugify-source2-launcher/commit/db2027525780752ca3b42c0323fa1223bc080ea0))
+* update plugify ([1734893](https://github.com/untrustedmodders/plugify-source2-launcher/commit/1734893bc9c91b093a107fca68493e5b18725da7))
+* update plugify ([75edb4a](https://github.com/untrustedmodders/plugify-source2-launcher/commit/75edb4a070eb653635965f24356d015f549214f7))
+
 ## [2.5.4](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.3...v2.5.4) (2026-11-03)
 
 
