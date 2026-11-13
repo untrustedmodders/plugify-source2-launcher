@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.9](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.8...v2.5.9) (2026-11-13)
+
+
+### Bug Fixes
+
+* add path to output ([61ed135](https://github.com/untrustedmodders/plugify-source2-launcher/commit/61ed135eea1d5f7515ec2b5209f93905315d76c7))
+
 ## [2.5.8](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.7...v2.5.8) (2026-11-13)
 
 
