@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.8](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.7...v2.5.8) (2026-11-13)
+
+
+### Bug Fixes
+
+* build issue on windows ([7e82676](https://github.com/untrustedmodders/plugify-source2-launcher/commit/7e82676b42e9553fb90c6a8a1a91506d176ebe32))
+
 ## [2.5.7](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.6...v2.5.7) (2026-11-13)
 
 
