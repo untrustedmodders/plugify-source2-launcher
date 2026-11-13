@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.7](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.6...v2.5.7) (2026-11-13)
+
+
+### Bug Fixes
+
+* add option to search crash_handler in game folder ([1ea86ef](https://github.com/untrustedmodders/plugify-source2-launcher/commit/1ea86ef5eeec97b80616cd9e3aaf12d6e73462a9))
+
 ## [2.5.6](https://github.com/untrustedmodders/plugify-source2-launcher/compare/v2.5.5...v2.5.6) (2026-11-10)
 
 
