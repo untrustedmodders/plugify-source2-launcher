@@ -2881,7 +2881,23 @@ class SentryInitializer {
 
 public:
 	static Result<bool>
-	Initialize(const fs::path& exeDir, const fs::path& annotationsPath) {
+	Initialize(std::span<const fs::path> searchDirs, const fs::path& annotationsPath) {
+		std::error_code ec;
+		auto found = std::ranges::find_if(searchDirs, [&](const fs::path& dir) {
+			return fs::exists(dir / annotationsPath, ec);
+		});
+
+		if (found == searchDirs.end()) {
+			std::vector<std::string> searched;
+			searched.reserve(searchDirs.size());
+			for (const auto& dir : searchDirs) {
+				searched.push_back(std::format("'{}'", plg::as_string(dir / annotationsPath)));
+			}
+			return MakeError("Failed to find config file, searched: {}", plg::join(searched, ", "));
+		}
+
+		const fs::path& exeDir = *found;
+
 		// Load metadata
 		auto metadataResult = ReadFile<Metadata>(exeDir / annotationsPath);
 		if (!metadataResult) {
@@ -3604,11 +3620,13 @@ private:
 		auto game_path = GamePath();
 
 		if (!std::is_debugger_present()) {
-			auto result = SentryInitializer::Initialize(root_path, PLUGIFY_PATH_LITERAL("sentry.jsonc"));
+			const fs::path config_dirs[] = { root_path, game_path };
+			auto result = SentryInitializer::Initialize(config_dirs, PLUGIFY_PATH_LITERAL("sentry.jsonc"));
 			if (!result) {
-				return MakeError(std::move(result.error()));
+				std::println(std::cerr, "Warning: Crash reporting disabled: {}", result.error());
+			} else {
+				s_sentry = *result;
 			}
-			s_sentry = *result;
 		}
 
 		auto engine_path = root_path / ENGINE_PATH;

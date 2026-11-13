@@ -2,11 +2,11 @@
     "$schema": "https://raw.githubusercontent.com/untrustedmodders/plugify/refs/heads/main/schemas/config.schema.json",
     "paths": {
         "baseDir": "addons/plugify",
-        "extensionsDir": "extensions",
+        "extensionsDir": "envs",
         "configsDir": "configs",
         "dataDir": "data",
         "logsDir": "logs",
-        "cacheDir": "cache"
+        "cacheDir": "pkgs"
     },
     "loading": {
         "preferOwnSymbols": ${PLUGIFY_PREFER_OWN_SYMBOLS},
