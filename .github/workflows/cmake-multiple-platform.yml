@@ -124,19 +124,22 @@ jobs:
       - name: Prepare artifacts
         shell: bash -el {0}
         run: |
-          mkdir -p build/output/bin/${{ matrix.platform }}/
-          mkdir -p build/output/csgo/bin/${{ matrix.platform }}/
-          cp build/external/plugify/*plugify.* build/output/bin/${{ matrix.platform }}/
-          cp build/external/sentry/*sentry.* build/output/bin/${{ matrix.platform }}/
           if [[ "${{ matrix.project_name }}" = "plugify-source2-runtime" ]]; then
-            cp build/*server_valve* build/output/csgo/bin/${{ matrix.platform }}/
+            BIN_DIR=build/output/csgo/bin/${{ matrix.platform }}/
+            mkdir -p $BIN_DIR
+            cp build/*server_valve* $BIN_DIR
           else
-            cp build/*s2launcher* build/output/bin/${{ matrix.platform }}/
+            BIN_DIR=build/output/bin/${{ matrix.platform }}/
+            mkdir -p $BIN_DIR
+            cp build/*s2launcher* $BIN_DIR
           fi
-          cp build/external/sentry/crashpad_build/handler/crashpad_handler build/output/bin/${{ matrix.platform }}/
-          cp build/sentry.jsonc build/output/bin/${{ matrix.platform }}/
-          mkdir -p build/output/csgo/addons/plugify/bin/${{ matrix.platform }}/
-          cp build/micromamba* build/output/csgo/addons/plugify/bin/${{ matrix.platform }}/
+          cp build/external/plugify/*plugify.* $BIN_DIR
+          cp build/external/sentry/*sentry.* $BIN_DIR
+          cp build/sentry.jsonc $BIN_DIR
+          cp build/external/sentry/crashpad_build/handler/crashpad_handler $BIN_DIR
+          PLG_DIR=build/output/csgo/addons/plugify/bin/${{ matrix.platform }}/
+          mkdir -p $PLG_DIR
+          cp build/micromamba* $PLG_DIR
           # cp build/plugify.pconfig build/output/csgo
           # Cleanup dev files
           find build/output -type f \( -name "*.exp" -o -name "*.ilk" -o -name "*.lib" -o -name "*.pdb" \) -delete
