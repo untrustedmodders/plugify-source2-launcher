@@ -3098,7 +3098,7 @@ public:
 		if (metadata.attachments) {
 			for (const auto& attachment : *metadata.attachments) {
 				fs::path attachmentPath = exeDir / attachment;
-				std::error_code ec;
+				//std::error_code ec;
 				if (fs::exists(attachmentPath, ec)) {
 					sentry_pcall2(sentry_attach_file, attachmentPath.native());
 				} else if (ec) {
